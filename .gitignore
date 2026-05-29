@@ -39,3 +39,14 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# agent files
+AGENTS.md
+CLAUDE.md
+.claude/
+
+# database meta
+drizzle/
+
+# env
+.env
