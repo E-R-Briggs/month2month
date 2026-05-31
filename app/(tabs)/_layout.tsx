@@ -1,44 +1,43 @@
 import { Tabs } from 'expo-router';
-import { Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../components/ThemeContext';
 
-function TabIcon({ name, focused }: { name: string; focused: boolean }) {
-  const icons: Record<string, string> = {
-    index: '\u{1F4B0}',
-    settings: '\u2699\uFE0F',
+function TabIcon({ name, focused, color }: { name: string; focused: boolean; color: string }) {
+  const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
+    index: focused ? 'home' : 'home-outline',
+    settings: focused ? 'settings' : 'settings-outline',
   };
-  return (
-    <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.4 }}>
-      {icons[name] || '?'}
-    </Text>
-  );
+  return <Ionicons name={icons[name] || 'help-outline'} size={22} color={color as string} />;
 }
 
 export default function TabLayout() {
+  const { theme } = useTheme();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#121212',
-          borderTopColor: '#222',
+          backgroundColor: theme.card,
+          borderTopColor: theme.cardBorder,
           borderTopWidth: 1,
         },
-        tabBarActiveTintColor: '#ffffff',
-        tabBarInactiveTintColor: '#555',
+        tabBarActiveTintColor: theme.text,
+        tabBarInactiveTintColor: theme.textTertiary,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ focused }) => <TabIcon name="index" focused={focused} />,
+          tabBarIcon: ({ focused, color }) => <TabIcon name="index" focused={focused} color={color as string} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ focused }) => <TabIcon name="settings" focused={focused} />,
+          tabBarIcon: ({ focused, color }) => <TabIcon name="settings" focused={focused} color={color as string} />,
         }}
       />
     </Tabs>

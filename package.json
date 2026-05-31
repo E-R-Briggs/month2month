@@ -3,14 +3,23 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@react-native-community/datetimepicker": "^9.1.0",
+    "babel-preset-expo": "~56.0.0",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "expo": "~56.0.6",
     "expo-constants": "~56.0.16",
+    "expo-crypto": "~56.0.4",
+    "expo-document-picker": "~56.0.4",
+    "expo-file-system": "~56.0.7",
+    "expo-font": "^56.0.5",
     "expo-haptics": "~56.0.3",
     "expo-linking": "~56.0.12",
+    "expo-local-authentication": "~56.0.4",
     "expo-router": "~56.2.7",
+    "expo-secure-store": "~56.0.4",
+    "expo-sharing": "~56.0.15",
     "expo-sqlite": "~56.0.4",
     "expo-status-bar": "~56.0.4",
     "expo-web-browser": "~56.0.5",
@@ -23,17 +32,40 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-svg": "15.15.4",
+    "react-native-worklets": "^0.8.3",
+    "reanimated-color-picker": "^4.3.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
+    "@react-native/jest-preset": "^0.85.3",
+    "@testing-library/jest-native": "^5.4.3",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.2.2",
+    "babel-jest": "^30.4.1",
+    "better-sqlite3": "^12.10.0",
+    "jest": "^30.4.2",
+    "jest-expo": "^56.0.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "jest --passWithNoTests"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "install": {
+      "exclude": [
+        "react-native-reanimated",
+        "react-native-worklets"
+      ]
+    }
+  }
 }

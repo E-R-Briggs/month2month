@@ -1,17 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedReaction,
   withTiming,
   withSpring,
   withDelay,
   interpolateColor,
-  useDerivedValue,
   Easing,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
+import { formatCurrency, getCurrencySymbol } from '../utils/currency';
+import type { CurrencyCode } from '../utils/currency';
 
-function FloatingDiff({ amount, isIncrease }: { amount: number; isIncrease: boolean }) {
+function FloatingDiff({
+  amount,
+  isIncrease,
+  positiveColor,
+  negativeColor,
+  currency,
+}: {
+  amount: number;
+  isIncrease: boolean;
+  positiveColor: string;
+  negativeColor: string;
+  currency: CurrencyCode;
+}) {
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(1);
   const scale = useSharedValue(0);
@@ -38,33 +53,44 @@ function FloatingDiff({ amount, isIncrease }: { amount: number; isIncrease: bool
       style={[
         styles.floating,
         animStyle,
-        { color: isIncrease ? '#22c55e' : '#ef4444' },
+        { color: isIncrease ? positiveColor : negativeColor },
       ]}
     >
-      {isIncrease ? '+' : '-'}£{Math.abs(amount).toFixed(2)}
+      {isIncrease ? '+' : '-'}{getCurrencySymbol(currency)}{Math.abs(amount).toFixed(2)}
     </Animated.Text>
   );
 }
 
 type Props = {
   value: number;
+  positiveColor?: string;
+  negativeColor?: string;
+  color?: string;
+  currency?: CurrencyCode;
   style?: any;
 };
 
-export default function AnimatedBalance({ value, style }: Props) {
+export default function AnimatedBalance({ value, positiveColor = '#22c55e', negativeColor = '#ef4444', color = '#ffffff', currency = 'GBP', style }: Props) {
   const animatedValue = useSharedValue(value);
   const flashProgress = useSharedValue(0);
-  const isIncreaseRef = useRef(true);
-  const prevValueRef = useRef(value);
+  const currencySymSV = useSharedValue(getCurrencySymbol(currency));
+  const isIncreaseSV = useSharedValue(true);
+  const prevValueSV = useSharedValue(value);
   const [diffs, setDiffs] = useState<{ id: number; amount: number; inc: boolean }[]>([]);
+  const [displayText, setDisplayText] = useState(
+    () => formatCurrency(value, currency),
+  );
   const nextId = useRef(0);
 
+  const posRgba = useRef(hexToRgba(positiveColor, 0.15)).current;
+  const negRgba = useRef(hexToRgba(negativeColor, 0.15)).current;
+
   useEffect(() => {
-    if (value !== prevValueRef.current) {
-      const diff = value - prevValueRef.current;
+    if (value !== prevValueSV.value) {
+      const diff = value - prevValueSV.value;
       const inc = diff > 0;
-      isIncreaseRef.current = inc;
-      prevValueRef.current = value;
+      isIncreaseSV.value = inc;
+      prevValueSV.value = value;
 
       const id = nextId.current++;
       setDiffs(prev => [...prev, { id, amount: Math.abs(diff), inc }]);
@@ -85,33 +111,37 @@ export default function AnimatedBalance({ value, style }: Props) {
     }
   }, [value]);
 
-  const displayText = useDerivedValue(() => {
-    return `\u00A3${Math.abs(animatedValue.value).toFixed(2)}`;
-  });
+  useEffect(() => {
+    currencySymSV.value = getCurrencySymbol(currency);
+  }, [currency]);
+
+  useAnimatedReaction(
+    () => animatedValue.value,
+    (current) => {
+      const prefix = current < 0 ? '-' : '';
+      scheduleOnRN(setDisplayText, `${prefix}${currencySymSV.value}${Math.abs(current).toFixed(2)}`);
+    },
+  );
 
   const textStyle = useAnimatedStyle(() => {
-    const color = interpolateColor(
+    const flashColor = interpolateColor(
       flashProgress.value,
       [0, 0.25, 1],
       [
-        '#ffffff',
-        isIncreaseRef.current ? '#22c55e' : '#ef4444',
-        '#ffffff',
+        color,
+        isIncreaseSV.value ? positiveColor : negativeColor,
+        color,
       ],
     );
-    return { color };
+    return { color: flashColor };
   });
 
   const bgStyle = useAnimatedStyle(() => {
+    const active = isIncreaseSV.value ? posRgba : negRgba;
     const bg = interpolateColor(
       flashProgress.value,
       [0, 0.2, 0.6, 1],
-      [
-        'rgba(255,255,255,0)',
-        isIncreaseRef.current ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-        isIncreaseRef.current ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-        'rgba(255,255,255,0)',
-      ],
+      ['rgba(255,255,255,0)', active, active, 'rgba(255,255,255,0)'],
     );
     return { backgroundColor: bg };
   });
@@ -120,14 +150,29 @@ export default function AnimatedBalance({ value, style }: Props) {
     <View style={[styles.container, style]}>
       <Animated.View style={[styles.bg, bgStyle]}>
         <Animated.Text style={[styles.amount, textStyle]}>
-          {displayText.value}
+          {displayText}
         </Animated.Text>
       </Animated.View>
       {diffs.map(d => (
-        <FloatingDiff key={d.id} amount={d.amount} isIncrease={d.inc} />
+        <FloatingDiff
+          key={d.id}
+          amount={d.amount}
+          isIncrease={d.inc}
+          positiveColor={positiveColor}
+          negativeColor={negativeColor}
+          currency={currency}
+        />
       ))}
     </View>
   );
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 const styles = StyleSheet.create({
@@ -143,7 +188,6 @@ const styles = StyleSheet.create({
   amount: {
     fontSize: 36,
     fontWeight: '800',
-    color: '#ffffff',
   },
   floating: {
     position: 'absolute',

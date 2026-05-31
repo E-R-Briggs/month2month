@@ -10,42 +10,49 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../components/ThemeContext';
 
 export default function Step1() {
+  const { theme } = useTheme();
   const router = useRouter();
   const [amount, setAmount] = useState('');
 
+  const sanitized = amount.replace(/[^0-9.]/g, '');
+  const parsedAmount = parseFloat(sanitized);
+  const isValid = !isNaN(parsedAmount) && parsedAmount > 0;
+
   const handleContinue = () => {
-    const parsed = parseFloat(amount);
-    if (isNaN(parsed) || parsed <= 0) return;
-    router.push({ pathname: '/onboarding/step-2', params: { pay: amount } });
+    if (!isValid) return;
+    router.push({ pathname: '/onboarding/step-2', params: { pay: sanitized } });
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.inner}
       >
         <View style={styles.content}>
-          <Text style={styles.title}>Welcome to month2month</Text>
-          <Text style={styles.subtitle}>What's your monthly take-home pay?</Text>
-          <View style={styles.inputRow}>
-            <Text style={styles.pound}>£</Text>
+          <Text style={[styles.title, { color: theme.text }]}>Welcome to month2month</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>What's your monthly take-home pay?</Text>
+          <View style={[styles.inputRow, { borderBottomColor: theme.cardBorder }]}>
+            <View style={styles.poundContainer}>
+              <Text style={[styles.pound, { color: theme.text }]}>£</Text>
+            </View>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { color: theme.text, paddingLeft: 38 }]}
               value={amount}
               onChangeText={setAmount}
               keyboardType="numeric"
               placeholder="0.00"
-              placeholderTextColor="#555"
+              placeholderTextColor={theme.textTertiary}
               autoFocus
             />
           </View>
           <TouchableOpacity
-            style={[styles.button, (!amount || parseFloat(amount) <= 0) && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: theme.positive }, !isValid && styles.buttonDisabled]}
             onPress={handleContinue}
-            disabled={!amount || parseFloat(amount) <= 0}
+            disabled={!isValid}
           >
             <Text style={styles.buttonText}>Continue</Text>
           </TouchableOpacity>
@@ -90,7 +97,15 @@ const styles = StyleSheet.create({
   pound: {
     fontSize: 32,
     color: '#ffffff',
-    marginRight: 8,
+  },
+  poundContainer: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    width: 36,
+    zIndex: 1,
   },
   input: {
     flex: 1,

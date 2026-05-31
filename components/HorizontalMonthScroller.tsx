@@ -1,7 +1,7 @@
 import { useRef, useCallback } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { FlatList } from 'react-native-gesture-handler';
+import { View, FlatList, StyleSheet } from 'react-native';
 import type { MonthData } from '../db/types';
+import type { Label } from '../db';
 import MonthCard from './MonthCard';
 
 type Props = {
@@ -10,6 +10,7 @@ type Props = {
   currentIndex: number;
   onIndexChange: (index: number) => void;
   onRefresh: () => void;
+  labels: Label[];
 };
 
 const CARD_WIDTH = 360;
@@ -21,6 +22,7 @@ export default function HorizontalMonthScroller({
   currentIndex,
   onIndexChange,
   onRefresh,
+  labels,
 }: Props) {
   const listRef = useRef<FlatList>(null);
 
@@ -37,11 +39,11 @@ export default function HorizontalMonthScroller({
 
       return (
         <View style={styles.cardWrapper}>
-          <MonthCard key={item.month} data={monthData} onChanged={onRefresh} />
+          <MonthCard key={item.month} data={monthData} onChanged={onRefresh} labels={labels} />
         </View>
       );
     },
-    [dataMap, onRefresh],
+    [dataMap, onRefresh, labels],
   );
 
   const onMomentumEnd = useCallback(
@@ -83,7 +85,6 @@ export default function HorizontalMonthScroller({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
   },
   listContent: {
     paddingHorizontal: 8,
@@ -91,6 +92,7 @@ const styles = StyleSheet.create({
   cardWrapper: {
     width: CARD_WIDTH,
     marginHorizontal: CARD_GAP / 2,
+    flex: 1,
   },
   cardPlaceholder: {
     width: CARD_WIDTH,

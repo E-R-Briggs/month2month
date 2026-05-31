@@ -4,23 +4,28 @@
     "slug": "month2month",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "scheme": "month2month",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
     "splash": {
-      "backgroundColor": "#0a0a0a"
+      "backgroundColor": "#0f0f23"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.month2month.app"
+      "bundleIdentifier": "com.month2month.app",
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon.png",
+        "tinted": "./assets/icon.png"
+      }
     },
     "android": {
       "package": "com.month2month.app",
+      "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0a0a0a"
-      },
-      "softwareKeyboardLayoutMode": "pan"
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#0f0f23"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -29,7 +34,32 @@
     },
     "plugins": [
       "expo-router",
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow month2month to use Face ID to unlock the app."
+        }
+      ],
+      "expo-sharing",
+      [
+        "expo-font",
+        {
+          "fonts": ["./assets/fonts/MartianMonoNerdFontMono-Regular.ttf", "./assets/fonts/MartianMonoNerdFontMono-Bold.ttf"],
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "MartianMono NFM",
+                "fontDefinitions": [
+                  { "path": "./assets/fonts/MartianMonoNerdFontMono-Regular.ttf", "weight": 400 },
+                  { "path": "./assets/fonts/MartianMonoNerdFontMono-Bold.ttf", "weight": 700 }
+                ]
+              }
+            ]
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
