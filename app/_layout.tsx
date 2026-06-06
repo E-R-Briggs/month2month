@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -17,7 +17,10 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    getDatabase().catch(() => {});
+    // Skip database init on web - let it lazy load when needed
+    if (Platform.OS !== 'web') {
+      getDatabase().catch(() => {});
+    }
   }, []);
 
   if (!fontsLoaded) {
