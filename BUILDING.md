@@ -86,7 +86,7 @@ To set it up:
 
    | Setting | Value |
    |---|---|
-    | **Build command** | `npx expo export --platform web` |
+    | **Build command** | `npm run export:web` |
    | **Output directory** | `dist` |
    | **Environment variable** | `NODE_VERSION = 22` |
 
