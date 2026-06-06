@@ -33,4 +33,4 @@ React Native 0.85 · Expo SDK 56 · expo-sqlite · expo-router · react-native-r
 
 GNU General Public License v3.0. See [LICENSE](LICENSE).
 
-Building and using it yourself is always free. The app is also available on the App Store for £1 to support development.
+Building and using it yourself is always free. The app is also available on the App Store for £1.99 to support development.
