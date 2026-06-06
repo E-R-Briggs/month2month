@@ -1,11 +1,38 @@
 import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import * as schema from '../../db/schema';
 import { setTestDatabase, resetTestDatabase } from '../../db';
+
+function createAsyncMock(betterDb: Database.Database) {
+  return {
+    execAsync(sql: string) {
+      betterDb.exec(sql);
+      return Promise.resolve();
+    },
+    getAllAsync<T = any>(sql: string, params?: any[]) {
+      const rows = params
+        ? betterDb.prepare(sql).all(...params)
+        : betterDb.prepare(sql).all();
+      return Promise.resolve(rows as T[]);
+    },
+    getFirstAsync<T = any>(sql: string, params?: any[]) {
+      const row = params
+        ? betterDb.prepare(sql).get(...params)
+        : betterDb.prepare(sql).get();
+      return Promise.resolve((row ?? null) as T);
+    },
+    runAsync(sql: string, params?: any[]) {
+      const stmt = betterDb.prepare(sql);
+      const result = params ? stmt.run(...params) : stmt.run();
+      return Promise.resolve({
+        lastInsertRowId: result.lastInsertRowid as number,
+        changes: result.changes,
+      });
+    },
+  };
+}
 
 export function setupTestDb() {
   const sqlite = new Database(':memory:');
-  const db = drizzle(sqlite, { schema });
+  const mockDb = createAsyncMock(sqlite);
 
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS payments (
@@ -16,6 +43,7 @@ export function setupTestDb() {
       frequency TEXT DEFAULT 'monthly',
       weekDay INTEGER,
       startDate TEXT,
+      adjustment INTEGER DEFAULT false,
       createdAt INTEGER,
       updatedAt INTEGER
     );
@@ -34,6 +62,7 @@ export function setupTestDb() {
       labelId INTEGER,
       overrideMonth TEXT,
       type TEXT DEFAULT 'expense',
+      adjustment INTEGER DEFAULT false,
       createdAt INTEGER,
       updatedAt INTEGER
     );
@@ -52,10 +81,17 @@ export function setupTestDb() {
       name TEXT NOT NULL UNIQUE,
       color TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS holidays (
+      id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+      date TEXT NOT NULL,
+      name TEXT DEFAULT '',
+      recurring INTEGER DEFAULT true,
+      affectsPay INTEGER DEFAULT true
+    );
   `);
 
-  setTestDatabase(db);
-  return { sqlite, db };
+  setTestDatabase(mockDb);
+  return { sqlite, mockDb };
 }
 
 export function teardownTestDb() {

@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { formatCurrency, getCurrencySymbol } from '../utils/currency';
+import { hexToRgba } from '../utils/helpers';
 import type { CurrencyCode } from '../utils/currency';
 
 function FloatingDiff({
@@ -165,14 +166,6 @@ export default function AnimatedBalance({ value, positiveColor = '#22c55e', nega
       ))}
     </View>
   );
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 const styles = StyleSheet.create({

@@ -1,9 +1,8 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import * as schema from '../db/schema';
-import type { SyncPackage, Bill, Payment } from '../db/types';
-import { getDatabase, eq, desc, and, or, isNull, sql, getCurrentMonth } from '../db';
+import type { SyncPackage, SettingRow, EntitySyncInfo } from '../db/types';
+import { getDatabase } from '../db';
 
 const MAGIC = new Uint8Array([0x4D, 0x32, 0x4D]); // "M2M"
 const VERSION = 1;
@@ -64,35 +63,26 @@ export async function createBiometricKey(): Promise<Crypto.AESEncryptionKey> {
   return key;
 }
 
-export async function deleteBiometricKey() {
-  await SecureStore.deleteItemAsync(BIOMETRIC_KEY_STORE);
-}
-
 export async function buildSyncPackage(): Promise<SyncPackage> {
-  const db = getDatabase();
-  const bills = await db
-    .select()
-    .from(schema.bills)
-    .orderBy(schema.bills.id);
-  const payments = await db
-    .select()
-    .from(schema.payments)
-    .orderBy(schema.payments.id);
-  const settingsRows = await db
-    .select({ key: schema.settings.key, value: schema.settings.value })
-    .from(schema.settings);
-
-  const deletions = await db
-    .select()
-    .from(schema.syncDeletions)
-    .orderBy(schema.syncDeletions.id);
+  const db = await getDatabase();
+  const bills = await db.getAllAsync('SELECT * FROM bills ORDER BY id');
+  const payments = await db.getAllAsync('SELECT * FROM payments ORDER BY id');
+  const settingsRows = await db.getAllAsync(
+    'SELECT key, value FROM settings ORDER BY key',
+  ) as SettingRow[];
+  const holidays = await db.getAllAsync(
+    'SELECT * FROM holidays ORDER BY id',
+  );
+  const deletions = await db.getAllAsync(
+    'SELECT * FROM sync_deletions ORDER BY id',
+  ) as any[];
 
   const deletedBillIds = deletions
-    .filter(d => d.tableName === 'bills')
-    .map(d => d.rowId);
+    .filter((d: any) => d.tableName === 'bills')
+    .map((d: any) => d.rowId);
   const deletedPaymentIds = deletions
-    .filter(d => d.tableName === 'payments')
-    .map(d => d.rowId);
+    .filter((d: any) => d.tableName === 'payments')
+    .map((d: any) => d.rowId);
 
   return {
     exportedAt: Date.now(),
@@ -102,6 +92,7 @@ export async function buildSyncPackage(): Promise<SyncPackage> {
     settings: settingsRows,
     deletedBillIds,
     deletedPaymentIds,
+    holidays,
   };
 }
 
@@ -173,79 +164,111 @@ export async function importData(
   const pkg: SyncPackage = JSON.parse(json);
 
   let imported = 0;
-  const db = getDatabase();
+  const db = await getDatabase();
 
   for (const bill of pkg.bills) {
-    const existing = await db
-      .select({ id: schema.bills.id, updatedAt: schema.bills.updatedAt })
-      .from(schema.bills)
-      .where(eq(schema.bills.id, bill.id))
-      .limit(1);
+    const existing = await db.getFirstAsync(
+      'SELECT id, updatedAt FROM bills WHERE id = ? LIMIT 1',
+      [bill.id],
+    ) as EntitySyncInfo | null;
 
     const incomingTime = bill.updatedAt ? new Date(bill.updatedAt).getTime() : 0;
-    const existingTime = existing[0]?.updatedAt
-      ? new Date(existing[0].updatedAt).getTime()
+    const existingTime = existing?.updatedAt
+      ? new Date(existing.updatedAt).getTime()
       : 0;
 
-    if (!existing[0]) {
-      const { id, ...values } = bill;
-      await db.insert(schema.bills).values({ id, ...values } as any);
+    if (!existing) {
+      const cols = Object.keys(bill);
+      const placeholders = cols.map(() => '?').join(', ');
+      await db.runAsync(
+        `INSERT INTO bills (${cols.join(', ')}) VALUES (${placeholders})`,
+        cols.map(c => (bill as any)[c]),
+      );
       imported++;
     } else if (incomingTime > existingTime) {
-      const { id, ...values } = bill;
-      await db.update(schema.bills).set(values as any).where(eq(schema.bills.id, bill.id));
+      const { id: _, ...values } = bill;
+      const cols = Object.keys(values);
+      const setClauses = cols.map(c => `${c} = ?`).join(', ');
+      await db.runAsync(
+        `UPDATE bills SET ${setClauses} WHERE id = ?`,
+        [...cols.map(c => (values as any)[c]), bill.id],
+      );
       imported++;
     }
   }
 
   for (const payment of pkg.payments) {
-    const existing = await db
-      .select({ id: schema.payments.id, updatedAt: schema.payments.updatedAt })
-      .from(schema.payments)
-      .where(eq(schema.payments.id, payment.id))
-      .limit(1);
+    const existing = await db.getFirstAsync(
+      'SELECT id, updatedAt FROM payments WHERE id = ? LIMIT 1',
+      [payment.id],
+    ) as EntitySyncInfo | null;
 
     const incomingTime = payment.updatedAt ? new Date(payment.updatedAt).getTime() : 0;
-    const existingTime = existing[0]?.updatedAt
-      ? new Date(existing[0].updatedAt).getTime()
+    const existingTime = existing?.updatedAt
+      ? new Date(existing.updatedAt).getTime()
       : 0;
 
-    if (!existing[0]) {
-      const { id, ...values } = payment;
-      await db.insert(schema.payments).values({ id, ...values } as any);
+    if (!existing) {
+      const cols = Object.keys(payment);
+      const placeholders = cols.map(() => '?').join(', ');
+      await db.runAsync(
+        `INSERT INTO payments (${cols.join(', ')}) VALUES (${placeholders})`,
+        cols.map(c => (payment as any)[c]),
+      );
       imported++;
     } else if (incomingTime > existingTime) {
-      const { id, ...values } = payment;
-      await db.update(schema.payments).set(values as any).where(eq(schema.payments.id, payment.id));
+      const { id: _, ...values } = payment;
+      const cols = Object.keys(values);
+      const setClauses = cols.map(c => `${c} = ?`).join(', ');
+      await db.runAsync(
+        `UPDATE payments SET ${setClauses} WHERE id = ?`,
+        [...cols.map(c => (values as any)[c]), payment.id],
+      );
       imported++;
     }
   }
 
   for (const setting of pkg.settings) {
-    await db
-      .insert(schema.settings)
-      .values(setting)
-      .onConflictDoUpdate({ target: schema.settings.key, set: { value: setting.value } });
+    await db.runAsync(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?',
+      [setting.key, setting.value, setting.value],
+    );
   }
 
   for (const billId of pkg.deletedBillIds) {
-    await db.delete(schema.bills).where(eq(schema.bills.id, billId));
-    await db.delete(schema.syncDeletions).where(
-      and(
-        eq(schema.syncDeletions.tableName, 'bills'),
-        eq(schema.syncDeletions.rowId, billId),
-      ),
+    await db.runAsync('DELETE FROM bills WHERE id = ?', [billId]);
+    await db.runAsync(
+      'DELETE FROM sync_deletions WHERE tableName = ? AND rowId = ?',
+      ['bills', billId],
     );
   }
 
   for (const paymentId of pkg.deletedPaymentIds) {
-    await db.delete(schema.payments).where(eq(schema.payments.id, paymentId));
-    await db.delete(schema.syncDeletions).where(
-      and(
-        eq(schema.syncDeletions.tableName, 'payments'),
-        eq(schema.syncDeletions.rowId, paymentId),
-      ),
+    await db.runAsync('DELETE FROM payments WHERE id = ?', [paymentId]);
+    await db.runAsync(
+      'DELETE FROM sync_deletions WHERE tableName = ? AND rowId = ?',
+      ['payments', paymentId],
     );
+  }
+
+  if (pkg.holidays) {
+    for (const holiday of pkg.holidays) {
+      const existing = await db.getFirstAsync(
+        'SELECT id FROM holidays WHERE id = ? LIMIT 1',
+        [holiday.id],
+      );
+      if (existing) {
+        await db.runAsync(
+          'UPDATE holidays SET date = ?, name = ?, recurring = ?, affectsPay = ? WHERE id = ?',
+          [holiday.date, holiday.name, holiday.recurring ? 1 : 0, holiday.affectsPay ? 1 : 0, holiday.id],
+        );
+      } else {
+        await db.runAsync(
+          'INSERT INTO holidays (id, date, name, recurring, affectsPay) VALUES (?, ?, ?, ?, ?)',
+          [holiday.id, holiday.date, holiday.name, holiday.recurring ? 1 : 0, holiday.affectsPay ? 1 : 0],
+        );
+      }
+    }
   }
 
   return { imported };

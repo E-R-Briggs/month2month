@@ -45,7 +45,7 @@ export default function HomeScreen() {
         labels={labels}
       />
 
-      <View style={styles.buttonRow} pointerEvents="box-none">
+      <View style={[styles.buttonRow, { pointerEvents: 'box-none' }]}>
         <View style={styles.buttonCol}>
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: theme.negative }]}

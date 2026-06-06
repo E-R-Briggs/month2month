@@ -5,9 +5,11 @@ import {
   updateBill,
   deleteBill,
   setPay,
-  getPay,
   getMonthData,
   getPayForMonth,
+  addHoliday,
+  removeHoliday,
+  getHolidays,
 } from '../db';
 
 beforeEach(() => {
@@ -55,32 +57,27 @@ describe('addBill / getBill / updateBill / deleteBill', () => {
     expect(data2.bills).toHaveLength(0);
   });
 
-  it('round-trips type field', async () => {
-    await addBill('Gift', 50, false, '2026-04-10', undefined, undefined, 'other', undefined, undefined, 'income');
-    const data = await getMonthData('2026-04');
-    expect(data.income[0].type).toBe('income');
-  });
 });
 
 describe('setPay / getPay', () => {
   it('sets and retrieves monthly pay', async () => {
     await setPay(2000, '2026-04', 15);
-    const pay = await getPay('2026-04');
-    expect(pay).toBe(2000);
+    const { amount } = await getPayForMonth('2026-04');
+    expect(amount).toBe(2000);
   });
 
   it('carries pay forward to months without pay set', async () => {
     await setPay(2000, '2026-04', 15);
-    const mayPay = await getPay('2026-05');
-    expect(mayPay).toBe(2000);
+    const { amount } = await getPayForMonth('2026-05');
+    expect(amount).toBe(2000);
   });
 
   it('overrides pay in a later month', async () => {
     await setPay(2000, '2026-04', 15);
     await setPay(2500, '2026-06', 20);
-    expect(await getPay('2026-05')).toBe(2000);
-    expect(await getPay('2026-06')).toBe(2500);
-    expect(await getPay('2026-07')).toBe(2500);
+    expect((await getPayForMonth('2026-05')).amount).toBe(2000);
+    expect((await getPayForMonth('2026-06')).amount).toBe(2500);
+    expect((await getPayForMonth('2026-07')).amount).toBe(2500);
   });
 
   it('sets and retrieves weekly pay', async () => {
@@ -131,11 +128,11 @@ describe('getMonthData — income', () => {
     await setPay(2000, '2026-04', 15);
   });
 
-  it('includes income entries in income array', async () => {
+  it('includes income alongside pay in totalIncome', async () => {
     await addBill('Freelance', 500, false, '2026-04-10', undefined, undefined, 'other', undefined, undefined, 'income');
     const data = await getMonthData('2026-04');
     expect(data.income).toHaveLength(1);
-    expect(data.income[0].amount).toBe(500);
+    expect(data.totalIncome).toBe(2500); // 2000 pay + 500 income
   });
 
   it('does not count income in bills or postPayBills', async () => {
@@ -184,8 +181,9 @@ describe('getMonthData — override month', () => {
     await updateBill(bill.id, 'Holiday', 500, false, '2026-05-10', undefined, undefined, 'bills', undefined, undefined, '2026-04');
 
     const aprData = await getMonthData('2026-04');
-    expect(aprData.bills.find(b => b.name === 'Holiday')).toBeDefined();
-    expect(aprData.totalBills).toBe(500);
+    const found = aprData.bills.find(b => b.name === 'Holiday')!;
+    expect(found.amount).toBe(500);
+    expect(found.overrideMonth).toBe('2026-04');
   });
 
   it('income with overrideMonth counts toward that month', async () => {
@@ -195,8 +193,9 @@ describe('getMonthData — override month', () => {
     await updateBill(bill.id, 'Bonus', 1000, false, '2026-05-01', undefined, undefined, 'other', undefined, undefined, '2026-04', 'income');
 
     const aprData = await getMonthData('2026-04');
-    expect(aprData.income.find(b => b.name === 'Bonus')).toBeDefined();
-    expect(aprData.totalIncome).toBe(3000); // 2000 + 1000
+    const bonus = aprData.income.find(b => b.name === 'Bonus')!;
+    expect(bonus.amount).toBe(1000);
+    expect(aprData.totalIncome).toBe(3000); // 2000 pay + 1000 bonus
   });
 
   it('overridden bills do not appear in their original month', async () => {
@@ -226,6 +225,34 @@ describe('getMonthData — negative remaining', () => {
     const data = await getMonthData('2026-04');
     expect(data.totalIncome).toBe(1200);
     expect(data.remaining).toBe(-200);
+  });
+});
+
+describe('holidays', () => {
+  it('adds and retrieves a holiday', async () => {
+    await addHoliday('2026-07-04', 'Independence Day', true, true);
+    const holidays = await getHolidays();
+    expect(holidays).toHaveLength(1);
+    expect(holidays[0].date).toBe('2026-07-04');
+    expect(holidays[0].name).toBe('Independence Day');
+    expect(holidays[0].recurring).toBe(1);
+    expect(holidays[0].affectsPay).toBe(1);
+  });
+
+  it('removes a holiday', async () => {
+    const id = await addHoliday('2026-12-25', 'Christmas', true, true);
+    expect(await getHolidays()).toHaveLength(1);
+    await removeHoliday(id);
+    expect(await getHolidays()).toHaveLength(0);
+  });
+
+  it('lists multiple holidays ordered by date', async () => {
+    await addHoliday('2026-12-25', 'Christmas', true, true);
+    await addHoliday('2026-07-04', 'Independence Day', true, true);
+    const holidays = await getHolidays();
+    expect(holidays).toHaveLength(2);
+    expect(holidays[0].date).toBe('2026-07-04');
+    expect(holidays[1].date).toBe('2026-12-25');
   });
 });
 

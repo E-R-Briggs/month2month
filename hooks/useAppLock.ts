@@ -7,7 +7,7 @@ import { getItemSecurely, setItemSecurely, deleteItemSecurely } from '../utils/s
 
 const PIN_HASH_KEY = 'app_lock_pin_hash';
 
-async function hashPin(pin: string): Promise<string> {
+export async function hashPin(pin: string): Promise<string> {
   return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, pin);
 }
 
@@ -80,7 +80,6 @@ export function useAppLock() {
     try {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Unlock month2month',
-        disableDeviceFallback: true,
       });
       if (result.success) {
         setIsLocked(false);

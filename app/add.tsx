@@ -1,4 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
+import WebDateInput from '../components/WebDateInput';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
 import {
@@ -28,10 +29,10 @@ import {
 } from '../db';
 import type { Label } from '../db';
 import { getCurrencySymbol } from '../utils/currency';
+import { LABEL_COLORS } from '../utils/colors';
+import { capitalize, formatDateLocal } from '../utils/helpers';
 
 type EntryType = 'expense' | 'income';
-
-const LABEL_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#f97316'];
 
 export default function AddScreen() {
   const { theme, currency } = useTheme();
@@ -46,6 +47,7 @@ export default function AddScreen() {
   const [isRecurring, setIsRecurring] = useState(false);
   const [date, setDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
+  const [showStartMonthPicker, setShowStartMonthPicker] = useState(false);
   const [labelId, setLabelId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEditing);
@@ -55,10 +57,11 @@ export default function AddScreen() {
   const [weekDay, setWeekDay] = useState(0);
   const [endMonth, setEndMonth] = useState<string | null>(null);
   const [showEndPicker, setShowEndPicker] = useState(false);
+  const [adjustment, setAdjustment] = useState(false);
   const [labels, setLabels] = useState<Label[]>([]);
   const [customMode, setCustomMode] = useState(false);
   const [customName, setCustomName] = useState('');
-  const [customColor, setCustomColor] = useState(LABEL_COLORS[0]);
+  const [customColor, setCustomColor] = useState<string>(LABEL_COLORS[0]);
 
   const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -71,12 +74,13 @@ export default function AddScreen() {
       setEntryType((bill.type || 'expense') as EntryType);
       setName(bill.name);
       setAmount(String(bill.amount));
-      setIsRecurring(bill.isRecurring ?? false);
+      setIsRecurring(!!bill.isRecurring);
       setLabelId(bill.labelId ?? null);
       setOverrideMonth(bill.overrideMonth || null);
       setFrequency(bill.frequency || 'monthly');
       setWeekDay(bill.weekDay ?? 0);
       setEndMonth(bill.endMonth || null);
+      setAdjustment(!!bill.adjustment);
       if (bill.date) {
         setDate(new Date(bill.date + 'T00:00:00'));
       } else if (bill.startMonth) {
@@ -124,8 +128,8 @@ export default function AddScreen() {
         name || 'Untitled',
         parsedAmount,
         isRecurring,
-        isRecurring ? undefined : date.toISOString().slice(0, 10),
-        isRecurring ? monthFromDate(date.toISOString().slice(0, 10)) : undefined,
+        isRecurring ? undefined : formatDateLocal(date),
+        isRecurring ? monthFromDate(formatDateLocal(date)) : undefined,
         isRecurring && frequency === 'monthly' ? date.getDate() : undefined,
         cat,
         isRecurring ? frequency : undefined,
@@ -133,19 +137,20 @@ export default function AddScreen() {
         overrideMonth,
         entryType,
         isRecurring ? endMonth : null,
+        adjustment,
       );
     } else if (isRecurring) {
-      const startMonth = monthFromDate(date.toISOString().slice(0, 10));
+      const startMonth = monthFromDate(formatDateLocal(date));
       await addBill(
         name || 'Untitled', parsedAmount, true, undefined, startMonth,
         frequency === 'monthly' ? date.getDate() : undefined, cat,
-        frequency, frequency === 'weekly' ? weekDay : undefined, entryType, endMonth,
+        frequency, frequency === 'weekly' ? weekDay : undefined, entryType, endMonth, adjustment,
       );
     } else {
-      const dateStr = date.toISOString().slice(0, 10);
+      const dateStr = formatDateLocal(date);
       await addBill(
         name || 'Untitled', parsedAmount, false, dateStr, undefined, undefined, cat,
-        undefined, undefined, entryType,
+        undefined, undefined, entryType, undefined, adjustment,
       );
     }
 
@@ -251,22 +256,30 @@ export default function AddScreen() {
             <Text style={[styles.label, { color: theme.textSecondary }]}>
               {entryType === 'income' ? 'Date received' : 'Due date'}
             </Text>
-            <TouchableOpacity
-              style={[styles.dateButton, { backgroundColor: theme.card }]}
-              onPress={() => setShowPicker(true)}
-            >
-              <Text style={{ color: theme.text, fontSize: 16 }}>
-                {date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-              </Text>
-            </TouchableOpacity>
+            {Platform.OS === 'web' ? (
+              <View style={styles.webDateContainer}>
+                <WebDateInput value={date} onChange={(d) => setDate(d)} />
+              </View>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.dateButton, { backgroundColor: theme.card }]}
+                  onPress={() => setShowPicker(true)}
+                >
+                  <Text style={{ color: theme.text, fontSize: 16 }}>
+                    {date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </Text>
+                </TouchableOpacity>
 
-            {showPicker && (
-              <DateTimePicker
-                value={date}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onValueChange={onDateChange}
-              />
+                {showPicker && (
+                  <DateTimePicker
+                    value={date}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onValueChange={onDateChange}
+                  />
+                )}
+              </>
             )}
           </>
         )}
@@ -276,6 +289,20 @@ export default function AddScreen() {
           <Switch
             value={isRecurring}
             onValueChange={setIsRecurring}
+            trackColor={{ false: theme.cardBorder, true: accentColor }}
+            thumbColor="#fff"
+          />
+        </View>
+
+        <View style={styles.switchRow}>
+          <Text style={{ color: theme.text, fontSize: 15, flex: 1, marginRight: 12 }}>
+            {entryType === 'income'
+              ? 'Move to previous working day on weekends & bank holidays'
+              : 'Move to next working day on weekends & bank holidays'}
+          </Text>
+          <Switch
+            value={adjustment}
+            onValueChange={setAdjustment}
             trackColor={{ false: theme.cardBorder, true: accentColor }}
             thumbColor="#fff"
           />
@@ -298,7 +325,7 @@ export default function AddScreen() {
                   onPress={() => setFrequency(f)}
                 >
                   <Text style={[styles.modeText, { color: frequency === f ? '#ffffff' : theme.textSecondary }]}>
-                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                    {capitalize(f)}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -331,21 +358,41 @@ export default function AddScreen() {
 
             <Text style={[styles.label, { color: theme.textSecondary }]}>Start month</Text>
             <TouchableOpacity
-              style={[styles.dateButton, { backgroundColor: theme.card }]}
-              onPress={() => setShowPicker(true)}
+              style={[styles.overrideRow, { backgroundColor: theme.card }]}
+              onPress={() => setShowStartMonthPicker(!showStartMonthPicker)}
             >
               <Text style={{ color: theme.text, fontSize: 15 }}>
-                {getMonthLabel(monthFromDate(date.toISOString().slice(0, 10)))}
+                {getMonthLabel(monthFromDate(formatDateLocal(date)))}
+              </Text>
+              <Text style={{ color: theme.textTertiary, fontSize: 12 }}>
+                {showStartMonthPicker ? '▲' : '▼'}
               </Text>
             </TouchableOpacity>
 
-            {showPicker && (
-              <DateTimePicker
-                value={date}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onValueChange={onDateChange}
-              />
+            {showStartMonthPicker && (
+              <View style={styles.overrideList}>
+                {getAdjacentMonths(getCurrentMonth(), 6).map(m => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[
+                      styles.overrideOption,
+                      monthFromDate(formatDateLocal(date)) === m && { backgroundColor: theme.cardBorder },
+                    ]}
+                    onPress={() => {
+                      const [y, mon] = m.split('-').map(Number);
+                      setDate(new Date(y, mon - 1, date.getDate()));
+                      setShowStartMonthPicker(false);
+                    }}
+                  >
+                    <Text style={{ color: theme.text, fontSize: 14, flex: 1 }}>
+                      {getMonthLabel(m)}
+                    </Text>
+                    {monthFromDate(formatDateLocal(date)) === m && (
+                      <Text style={{ color: theme.positive, fontSize: 16 }}>✓</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
             )}
 
             <Text style={[styles.label, { color: theme.textSecondary, marginTop: 8 }]}>End month (optional)</Text>
@@ -375,7 +422,7 @@ export default function AddScreen() {
                     <Text style={{ color: theme.positive, fontSize: 16 }}>✓</Text>
                   )}
                 </TouchableOpacity>
-                {getAdjacentMonths(monthFromDate(date.toISOString().slice(0, 10)), 2).map(m => (
+                {getAdjacentMonths(monthFromDate(formatDateLocal(date)), 2).map(m => (
                   <TouchableOpacity
                     key={m}
                     style={[
@@ -614,6 +661,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 24,
   },
+  webDateContainer: {
+    marginBottom: 24,
+  },
   modeRow: {
     flexDirection: 'row',
     gap: 8,
@@ -650,8 +700,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
-    marginTop: 8,
+    marginBottom: 20,
+    marginTop: 20,
   },
   category: {
     flexDirection: 'row',

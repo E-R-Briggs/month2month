@@ -77,26 +77,28 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    getAllSettings().then(settings => {
-      const parsed: ThemeSettings = {
-        mode: (settings['theme_mode'] as 'dark' | 'light' | 'system') || 'system',
-        useAndroidSystem: settings['theme_use_android_system'] === 'true',
-        currency: (settings['currency'] as CurrencyCode) || 'GBP',
-        colors: {},
-      };
+    getAllSettings()
+      .then(settings => {
+        const parsed: ThemeSettings = {
+          mode: (settings['theme_mode'] as 'dark' | 'light' | 'system') || 'system',
+          useAndroidSystem: settings['theme_use_android_system'] === 'true',
+          currency: (settings['currency'] as CurrencyCode) || 'GBP',
+          colors: {},
+        };
 
-      const colorKeys: (keyof ThemeColors)[] = [
-        'positive', 'negative', 'background', 'card',
-        'cardBorder', 'text', 'textSecondary', 'textTertiary',
-      ];
-      for (const key of colorKeys) {
-        const val = settings[`theme_color_${key}`];
-        if (val) parsed.colors[key] = val;
-      }
+        const colorKeys: (keyof ThemeColors)[] = [
+          'positive', 'negative', 'background', 'card',
+          'cardBorder', 'text', 'textSecondary', 'textTertiary',
+        ];
+        for (const key of colorKeys) {
+          const val = settings[`theme_color_${key}`];
+          if (val) parsed.colors[key] = val;
+        }
 
-      setRawSettings(parsed);
-      setReady(true);
-    });
+        setRawSettings(parsed);
+        setReady(true);
+      })
+      .catch(() => setReady(true));
   }, []);
 
   const resolvedMode: 'dark' | 'light' =

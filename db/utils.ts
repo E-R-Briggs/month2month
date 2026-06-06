@@ -1,3 +1,4 @@
+import { previousBusinessDay, nextBusinessDay, type CustomHolidays } from '../utils/businessDays';
 import type { Bill } from './types';
 
 function dayFromDate(dateStr: string): number {
@@ -47,14 +48,26 @@ export function getAdjacentMonths(center: string, range: number): string[] {
   return months;
 }
 
-export function getBillDay(b: Bill, month: string): number | null {
+export function getBillDay(b: Bill, month: string, customHolidays?: CustomHolidays): number | null {
+  let day: number | null = null;
   if (b.isRecurring && b.frequency === 'weekly' && b.weekDay != null) {
     const dates = getWeekdayDatesInMonth(month, b.weekDay);
-    return dates.length > 0 ? dates[0] : null;
+    day = dates.length > 0 ? dates[0] : null;
+  } else if (b.isRecurring) {
+    day = b.dueDay ?? null;
+  } else if (b.date) {
+    day = dayFromDate(b.date);
   }
-  if (b.isRecurring) return b.dueDay ?? null;
-  if (b.date) return dayFromDate(b.date);
-  return null;
+
+  if (day != null && b.adjustment) {
+    const [y, m] = month.split('-').map(Number);
+    const clamped = Math.min(day, new Date(y, m, 0).getDate());
+    const date = new Date(y, m - 1, clamped);
+    const fn = b.type === 'income' ? previousBusinessDay : nextBusinessDay;
+    day = fn(date, customHolidays).getDate();
+  }
+
+  return day;
 }
 
 export function adjustWeeklyAmount(b: Bill, month: string): Bill {

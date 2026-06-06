@@ -2,7 +2,7 @@
   "expo": {
     "name": "month2month",
     "slug": "month2month",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "scheme": "month2month",
     "userInterfaceStyle": "dark",
@@ -13,6 +13,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.month2month.app",
+      "buildNumber": "1",
       "icon": {
         "light": "./assets/icon.png",
         "dark": "./assets/icon.png",
@@ -21,6 +22,7 @@
     },
     "android": {
       "package": "com.month2month.app",
+      "versionCode": 1,
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -46,14 +48,23 @@
       [
         "expo-font",
         {
-          "fonts": ["./assets/fonts/MartianMonoNerdFontMono-Regular.ttf", "./assets/fonts/MartianMonoNerdFontMono-Bold.ttf"],
+          "fonts": [
+            "./assets/fonts/MartianMonoNerdFontMono-Regular.ttf",
+            "./assets/fonts/MartianMonoNerdFontMono-Bold.ttf"
+          ],
           "android": {
             "fonts": [
               {
                 "fontFamily": "MartianMono NFM",
                 "fontDefinitions": [
-                  { "path": "./assets/fonts/MartianMonoNerdFontMono-Regular.ttf", "weight": 400 },
-                  { "path": "./assets/fonts/MartianMonoNerdFontMono-Bold.ttf", "weight": 700 }
+                  {
+                    "path": "./assets/fonts/MartianMonoNerdFontMono-Regular.ttf",
+                    "weight": 400
+                  },
+                  {
+                    "path": "./assets/fonts/MartianMonoNerdFontMono-Bold.ttf",
+                    "weight": 700
+                  }
                 ]
               }
             ]

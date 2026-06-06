@@ -8,6 +8,7 @@ import { useTheme } from './ThemeContext';
 import CalendarView from './CalendarView';
 import BillList from './BillList';
 import { formatCurrency } from '../utils/currency';
+import { capitalize } from '../utils/helpers';
 import AnimatedBalance from './AnimatedBalance';
 
 type Step = {
@@ -147,7 +148,7 @@ export default function MonthCard({ data, onChanged, labels }: Props) {
                   onPress={() => setActiveCategory(cat === 'all' ? null : cat)}
                 >
                   <Text style={[styles.filterChipText, { color: active ? '#fff' : theme.textSecondary }]}>
-                    {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                    {cat === 'all' ? 'All' : capitalize(cat)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -210,7 +211,7 @@ export default function MonthCard({ data, onChanged, labels }: Props) {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      <View style={styles.fabSpacer} pointerEvents="box-none" />
+      <View style={[styles.fabSpacer, { pointerEvents: 'box-none' }]} />
     </View>
   );
 }

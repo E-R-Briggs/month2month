@@ -1,31 +1,48 @@
+import Constants from 'expo-constants';
+import { Ionicons } from '@expo/vector-icons';
+import * as LocalAuthentication from 'expo-local-authentication';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  View,
+  Alert,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ScrollView,
-  Platform,
-  Switch,
-  Modal,
+  View,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import * as LocalAuthentication from 'expo-local-authentication';
-import { getCurrentMonth, setPay, getPayForMonth, getMonthLabel, resetAllData } from '../../db';
-import { useTheme } from '../../components/ThemeContext';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import ColorPickerRow from '../../components/ColorPickerRow';
-import { CURRENCY_OPTIONS, getCurrencySymbol } from '../../utils/currency';
-import { exportData, importData, createBiometricKey, getBiometricKey, deleteBiometricKey } from '../../utils/sync';
+import PayEditor from '../../components/PayEditor';
+import LockSetup from '../../components/LockSetup';
+import WebDateInput from '../../components/WebDateInput';
+import { useTheme, type ThemeColors } from '../../components/ThemeContext';
+import { useAppLock } from '../../hooks/useAppLock';
+import { getCurrentMonth, getPayForMonth, resetAllData, setPay, getHolidays, addHoliday, updateHoliday, removeHoliday } from '../../db';
+import type { Holiday } from '../../db';
+import { CURRENCY_OPTIONS, type CurrencyCode } from '../../utils/currency';
 import { exportFile, importFile } from '../../utils/fileIO';
-import type { CurrencyCode } from '../../utils/currency';
+import { capitalize, formatDateLocal } from '../../utils/helpers';
+import { createBiometricKey, exportData, getBiometricKey, importData } from '../../utils/sync';
 
-const APP_VERSION = require('../../package.json').version;
+const APP_VERSION = Constants.expoConfig?.version || '0.0.0';
 
-const COLOR_KEYS: { key: keyof ReturnType<typeof useTheme>['theme']; label: string }[] = [
+const cardAnimation = {
+  animationName: {
+    from: { opacity: 0, transform: [{ translateY: 10 }] },
+    to: { opacity: 1, transform: [{ translateY: 0 }] },
+  },
+  animationDuration: '400ms',
+  animationTimingFunction: 'ease-out',
+  animationFillMode: 'backwards' as const,
+};
+
+const COLOR_KEYS: { key: keyof ThemeColors; label: string }[] = [
   { key: 'positive', label: 'Positive (income)' },
   { key: 'negative', label: 'Negative (bills)' },
   { key: 'background', label: 'Background' },
@@ -36,16 +53,15 @@ const COLOR_KEYS: { key: keyof ReturnType<typeof useTheme>['theme']; label: stri
   { key: 'textTertiary', label: 'Placeholder Text' },
 ];
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
 export default function SettingsScreen() {
-  const { theme, resolvedMode, rawSettings, currency, updateColor, updateMode, toggleAndroidSystem, resetTheme, updateCurrency } = useTheme();
+  const router = useRouter();
+  const { theme, rawSettings, currency, updateColor, updateMode, toggleAndroidSystem, resetTheme, updateCurrency } = useTheme();
+  const lock = useAppLock();
   const [payAmount, setPayAmount] = useState('');
-  const [payDate, setPayDate] = useState('28');
-  const [payFrequency, setPayFrequency] = useState('monthly');
-  const [payWeekDay, setPayWeekDay] = useState(5);
+  const [payDate, setPayDate] = useState(28);
+  const [payFrequency, setPayFrequency] = useState<'monthly' | 'weekly'>('monthly');
   const [startDate, setStartDate] = useState(new Date());
-  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [payAdjustment, setPayAdjustment] = useState(false);
   const [loading, setLoading] = useState(true);
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [importModalVisible, setImportModalVisible] = useState(false);
@@ -55,10 +71,23 @@ export default function SettingsScreen() {
   const [showImportPassword, setShowImportPassword] = useState(false);
   const [hasBiometrics, setHasBiometrics] = useState(false);
   const [pendingImportData, setPendingImportData] = useState<Uint8Array | null>(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [lockModalVisible, setLockModalVisible] = useState(false);
+  const [lockUseBiometrics, setLockUseBiometrics] = useState(false);
+
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [addHolidayModalVisible, setAddHolidayModalVisible] = useState(false);
+  const [editHolidayId, setEditHolidayId] = useState<number | null>(null);
+  const [holidayFormDate, setHolidayFormDate] = useState(new Date());
+  const [holidayFormName, setHolidayFormName] = useState('');
+  const [holidayFormRecurring, setHolidayFormRecurring] = useState(true);
+  const [holidayFormAffectsPay, setHolidayFormAffectsPay] = useState(true);
 
   useEffect(() => {
     loadPay();
-    LocalAuthentication.hasHardwareAsync().then(setHasBiometrics);
+    if (Platform.OS !== 'web') {
+      LocalAuthentication.hasHardwareAsync().then(setHasBiometrics);
+    }
   }, []);
 
   async function loadPay() {
@@ -66,14 +95,14 @@ export default function SettingsScreen() {
     const info = await getPayForMonth(month);
     if (info.amount > 0) {
       setPayAmount(info.amount.toString());
-      setPayFrequency(info.frequency);
-      if (info.frequency === 'weekly' && info.weekDay != null) {
-        setPayWeekDay(info.weekDay);
+      setPayFrequency(info.frequency as 'monthly' | 'weekly');
+      setPayAdjustment(info.adjustment);
+      if (info.frequency === 'weekly') {
         if (info.startDate) {
           setStartDate(new Date(info.startDate + 'T00:00:00'));
         }
       } else {
-        setPayDate(String(info.payDate));
+        setPayDate(info.payDate);
       }
     }
     setLoading(false);
@@ -87,14 +116,13 @@ export default function SettingsScreen() {
       return;
     }
     if (payFrequency === 'monthly') {
-      const day = parseInt(payDate, 10);
-      if (isNaN(day) || day < 1 || day > 31) {
-        Alert.alert('Invalid', 'Please enter a valid day (1-31)');
+      if (payDate < 0 || payDate > 31) {
+        Alert.alert('Invalid', 'Please select a valid day');
         return;
       }
-      await setPay(amount, getCurrentMonth(), day, 'monthly');
+      await setPay(amount, getCurrentMonth(), payDate, 'monthly', undefined, undefined, payAdjustment);
     } else {
-      await setPay(amount, getCurrentMonth(), payWeekDay, 'weekly', payWeekDay, startDate.toISOString().slice(0, 10));
+      await setPay(amount, getCurrentMonth(), startDate.getDate(), 'weekly', startDate.getDay(), startDate.toISOString().slice(0, 10), payAdjustment);
     }
     Alert.alert('Saved', 'Your pay has been updated');
   }
@@ -202,6 +230,57 @@ export default function SettingsScreen() {
     }
   }
 
+  useEffect(() => {
+    getHolidays().then(setHolidays);
+  }, []);
+
+  function resetHolidayForm(date?: Date) {
+    setHolidayFormDate(date || new Date());
+    setHolidayFormName('');
+    setHolidayFormRecurring(true);
+    setHolidayFormAffectsPay(true);
+  }
+
+  function startEditHoliday(h: Holiday) {
+    setEditHolidayId(prev => prev === h.id ? null : h.id);
+    setHolidayFormDate(new Date(h.date + 'T00:00:00'));
+    setHolidayFormName(h.name);
+    setHolidayFormRecurring(!!h.recurring);
+    setHolidayFormAffectsPay(!!h.affectsPay);
+  }
+
+  async function handleSaveHoliday() {
+    const dateStr = formatDateLocal(holidayFormDate);
+    if (editHolidayId != null) {
+      await updateHoliday(editHolidayId, dateStr, holidayFormName, holidayFormRecurring, holidayFormAffectsPay);
+    } else {
+      await addHoliday(dateStr, holidayFormName, holidayFormRecurring, holidayFormAffectsPay);
+    }
+    setHolidays(await getHolidays());
+    setEditHolidayId(null);
+    setAddHolidayModalVisible(false);
+  }
+
+  async function handleDeleteHoliday(id: number) {
+    await removeHoliday(id);
+    setHolidays(await getHolidays());
+    if (editHolidayId === id) setEditHolidayId(null);
+  }
+
+  function cardCss(delay: number) {
+    return {
+      backgroundColor: theme.card,
+      borderColor: theme.cardBorder,
+      borderWidth: 1,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 24,
+      boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 12, color: 'rgba(0,0,0,0.3)' }],
+      ...cardAnimation,
+      animationDelay: `${delay}ms`,
+    };
+  }
+
   if (loading) return null;
 
   return (
@@ -209,315 +288,340 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
 
-        {/* Pay section */}
-        <Text style={[styles.section, { color: theme.textSecondary }]}>PAY</Text>
+        <View style={cardCss(0)}>
+          <Text style={[styles.section, { color: theme.textSecondary }]}>PAY</Text>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>Frequency</Text>
-        <View style={styles.modeRow}>
-          {(['monthly', 'weekly'] as const).map(freq => (
-            <TouchableOpacity
-              key={freq}
-              style={[
-                styles.modeButton,
-                {
-                  backgroundColor: payFrequency === freq ? theme.positive : theme.card,
-                  borderColor: theme.cardBorder,
-                },
-              ]}
-              onPress={() => setPayFrequency(freq)}
-            >
-              <Text style={[styles.modeText, { color: payFrequency === freq ? '#ffffff' : theme.textSecondary }]}>
-                {freq.charAt(0).toUpperCase() + freq.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={[styles.label, { color: theme.textSecondary }]}>
-          {payFrequency === 'monthly' ? `Monthly Pay (${getMonthLabel(getCurrentMonth())})` : 'Weekly Pay Amount'}
-        </Text>
-        <View style={[styles.inputRow, { borderBottomColor: theme.cardBorder }]}>
-          <TextInput
-            style={[styles.input, { color: theme.text, borderBottomColor: theme.cardBorder, paddingBottom: 0, borderBottomWidth: 0 }]}
-            value={payAmount ? `${getCurrencySymbol(currency)}${payAmount}` : ''}
-            onChangeText={v => {
-              const stripped = v.replace(new RegExp(`[^0-9.]`, 'g'), '');
-              setPayAmount(stripped);
-            }}
-            keyboardType="numeric"
-            placeholder="0.00"
-            placeholderTextColor={theme.textTertiary}
+          <PayEditor
+            amount={payAmount}
+            frequency={payFrequency}
+            monthlyDay={payDate}
+            startDate={startDate}
+            currency={currency}
+            adjustment={payAdjustment}
+            onAmountChange={setPayAmount}
+            onFrequencyChange={setPayFrequency}
+            onMonthlyDayChange={setPayDate}
+            onStartDateChange={setStartDate}
+            onAdjustmentChange={setPayAdjustment}
           />
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: theme.positive }]}
+            onPress={handleSavePay}
+          >
+            <Text style={[styles.buttonText, { color: '#ffffff' }]}>Save Pay</Text>
+          </TouchableOpacity>
         </View>
 
-        {payFrequency === 'monthly' ? (
-          <>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Pay Day</Text>
-            <TextInput
-              style={[styles.input, { color: theme.text, borderBottomColor: theme.cardBorder }]}
-              value={payDate}
-              onChangeText={setPayDate}
-              keyboardType="number-pad"
-              placeholder="1-31"
-              placeholderTextColor={theme.textTertiary}
-            />
-          </>
-        ) : (
-          <>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Pay Day of Week</Text>
-            <View style={styles.weekdayRow}>
-              {WEEKDAYS.map((name, i) => (
-                <TouchableOpacity
-                  key={name}
-                  style={[
-                    styles.weekdayButton,
-                    {
-                      backgroundColor: payWeekDay === i ? theme.positive : theme.card,
-                      borderColor: theme.cardBorder,
-                    },
-                  ]}
-                  onPress={() => setPayWeekDay(i)}
-                >
-                  <Text style={[styles.weekdayText, { color: payWeekDay === i ? '#ffffff' : theme.textSecondary }]}>
-                    {name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Start Date</Text>
-            <TouchableOpacity
-              style={[styles.dateButton, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
-              onPress={() => setShowStartPicker(true)}
-            >
-              <Text style={{ color: theme.text, fontSize: 16 }}>
-                {startDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-              </Text>
-            </TouchableOpacity>
-            {showStartPicker && (
-              <DateTimePicker
-                value={startDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onValueChange={(_: any, selected?: Date) => {
-                  setShowStartPicker(Platform.OS === 'ios');
-                  if (selected) setStartDate(selected);
-                }}
-              />
-            )}
-          </>
-        )}
-
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: theme.positive }]}
-          onPress={handleSavePay}
-        >
-          <Text style={[styles.buttonText, { color: '#ffffff' }]}>Save Pay</Text>
-        </TouchableOpacity>
-
-        {/* Currency section */}
-        <Text style={[styles.section, { color: theme.textSecondary, marginTop: 40 }]}>CURRENCY</Text>
-        <View style={styles.currencyGrid}>
-          {CURRENCY_OPTIONS.map(opt => (
-            <TouchableOpacity
-              key={opt.code}
-              style={[
-                styles.currencyButton,
-                {
-                  backgroundColor: currency === opt.code ? theme.positive : theme.card,
-                  borderColor: theme.cardBorder,
-                },
-              ]}
-              onPress={() => updateCurrency(opt.code as CurrencyCode)}
-            >
-              <Text style={[styles.currencySymbol, { color: currency === opt.code ? '#ffffff' : theme.text }]}>
-                {opt.symbol}
-              </Text>
-              <Text style={[styles.currencyLabel, { color: currency === opt.code ? '#ffffff' : theme.textSecondary }]}>
-                {opt.code}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Theme section */}
-        <Text style={[styles.section, { color: theme.textSecondary, marginTop: 40 }]}>THEME</Text>
-
-        <Text style={[styles.label, { color: theme.textSecondary }]}>Mode</Text>
-        <View style={styles.modeRow}>
-          {(['dark', 'light', 'system'] as const).map(mode => (
-            <TouchableOpacity
-              key={mode}
-              style={[
-                styles.modeButton,
-                {
-                  backgroundColor: rawSettings.mode === mode ? theme.positive : theme.card,
-                  borderColor: theme.cardBorder,
-                },
-              ]}
-              onPress={() => updateMode(mode)}
-            >
-              <Text
+        <View style={cardCss(80)}>
+          <Text style={[styles.section, { color: theme.textSecondary }]}>CURRENCY</Text>
+          <View style={styles.currencyGrid}>
+            {CURRENCY_OPTIONS.map(opt => (
+              <TouchableOpacity
+                key={opt.code}
                 style={[
-                  styles.modeText,
-                  { color: rawSettings.mode === mode ? '#ffffff' : theme.textSecondary },
+                  styles.currencyButton,
+                  {
+                    backgroundColor: currency === opt.code ? theme.positive : theme.card,
+                    borderColor: theme.cardBorder,
+                  },
                 ]}
+                onPress={() => updateCurrency(opt.code as CurrencyCode)}
               >
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text style={[styles.currencySymbol, { color: currency === opt.code ? '#ffffff' : theme.text }]}>
+                  {opt.symbol}
+                </Text>
+                <Text style={[styles.currencyLabel, { color: currency === opt.code ? '#ffffff' : theme.textSecondary }]}>
+                  {opt.code}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        {Platform.OS === 'android' && (
+        <View style={cardCss(160)}>
+          <Text style={[styles.section, { color: theme.textSecondary }]}>THEME</Text>
+
+          <Text style={[styles.label, { color: theme.textSecondary }]}>Mode</Text>
+          <View style={styles.modeRow}>
+            {(['dark', 'light', 'system'] as const).map(mode => (
+              <TouchableOpacity
+                key={mode}
+                style={[
+                  styles.modeButton,
+                  {
+                    backgroundColor: rawSettings.mode === mode ? theme.positive : theme.card,
+                    borderColor: theme.cardBorder,
+                  },
+                ]}
+                onPress={() => updateMode(mode)}
+              >
+                <Text
+                  style={[
+                    styles.modeText,
+                    { color: rawSettings.mode === mode ? '#ffffff' : theme.textSecondary },
+                  ]}
+                >
+                  {capitalize(mode)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {Platform.OS === 'android' && (
+            <View style={styles.switchRow}>
+              <Text style={[styles.label, { color: theme.textSecondary, marginBottom: 0, flex: 1 }]}>
+                Use Android system colours
+              </Text>
+              <Switch
+                value={rawSettings.useAndroidSystem}
+                onValueChange={toggleAndroidSystem}
+                trackColor={{ false: theme.cardBorder, true: theme.positive }}
+                thumbColor="#ffffff"
+              />
+            </View>
+          )}
+
+          <Text style={[styles.label, { color: theme.textSecondary, marginTop: 16 }]}>Colours</Text>
+          {COLOR_KEYS.map(({ key, label }) => (
+            <ColorPickerRow
+              key={key}
+              label={label}
+              color={theme[key]}
+              onColor={hex => updateColor(key, hex)}
+              theme={theme}
+            />
+          ))}
+
+          <TouchableOpacity
+            style={[styles.resetButton, { borderColor: theme.negative }]}
+            onPress={() => {
+              Alert.alert('Reset Theme', 'Reset all colours to defaults?', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Reset', style: 'destructive', onPress: resetTheme },
+              ]);
+            }}
+          >
+            <Text style={[styles.resetText, { color: theme.negative }]}>Reset Theme to Defaults</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={cardCss(240)}>
+          <Text style={[styles.section, { color: theme.textSecondary }]}>APP LOCK</Text>
+
           <View style={styles.switchRow}>
-            <Text style={[styles.label, { color: theme.textSecondary, marginBottom: 0, flex: 1 }]}>
-              Use Android system colours
-            </Text>
+            <Text style={{ color: theme.text, fontSize: 15, flex: 1 }}>App Lock</Text>
             <Switch
-              value={rawSettings.useAndroidSystem}
-              onValueChange={toggleAndroidSystem}
+              value={lock.enabled}
+              onValueChange={async enabled => {
+                if (enabled) {
+                  setLockUseBiometrics(lock.useBiometrics);
+                  setLockModalVisible(true);
+                } else {
+                  await lock.disableLock();
+                }
+              }}
               trackColor={{ false: theme.cardBorder, true: theme.positive }}
               thumbColor="#ffffff"
             />
           </View>
-        )}
 
-        <Text style={[styles.label, { color: theme.textSecondary, marginTop: 16 }]}>Colours</Text>
-        {COLOR_KEYS.map(({ key, label }) => (
-          <ColorPickerRow
-            key={key}
-            label={label}
-            color={theme[key]}
-            onColor={hex => updateColor(key, hex)}
-            theme={theme}
-          />
-        ))}
-
-        <TouchableOpacity
-          style={[styles.resetButton, { borderColor: theme.negative }]}
-          onPress={() => {
-            Alert.alert('Reset Theme', 'Reset all colours to defaults?', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Reset', style: 'destructive', onPress: resetTheme },
-            ]);
-          }}
-        >
-          <Text style={[styles.resetText, { color: theme.negative }]}>Reset Theme to Defaults</Text>
-        </TouchableOpacity>
-
-        {/* Data Export/Import */}
-        <Text style={[styles.section, { color: theme.textSecondary, marginTop: 40 }]}>DATA</Text>
-
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: theme.positive }]}
-          onPress={() => setExportModalVisible(true)}
-        >
-          <Text style={[styles.buttonText, { color: '#ffffff' }]}>Export Backup</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: theme.card, borderColor: theme.cardBorder, borderWidth: 1 }]}
-          onPress={handleImport}
-        >
-          <Text style={[styles.buttonText, { color: theme.text }]}>Import Backup</Text>
-        </TouchableOpacity>
-
-        <Modal visible={exportModalVisible} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Export Backup</Text>
-
-              <Text style={[styles.label, { color: theme.textSecondary }]}>Password (at least 4 characters)</Text>
-              <View style={styles.passwordRow}>
-                <TextInput
-                  style={[styles.passwordInput, { color: theme.text }]}
-                  value={syncPassword}
-                  onChangeText={setSyncPassword}
-                  placeholder="Enter password"
-                  placeholderTextColor={theme.textTertiary}
-                  secureTextEntry={!showExportPassword}
-                />
-                <TouchableOpacity
-                  style={styles.eyeButton}
-                  onPress={() => setShowExportPassword(!showExportPassword)}
-                >
-                  <Ionicons
-                    name={showExportPassword ? 'eye-outline' : 'eye-off-outline'}
-                    size={22}
-                    color={theme.textSecondary}
-                  />
-                </TouchableOpacity>
-              </View>
-
+          {lock.enabled && (
+            <>
               <TouchableOpacity
-                style={[styles.button, { backgroundColor: theme.positive }]}
-                onPress={handleExportWithPassword}
-                disabled={syncLoading}
+                style={[styles.button, { backgroundColor: theme.card, borderColor: theme.cardBorder, borderWidth: 1 }]}
+                onPress={() => { setLockUseBiometrics(lock.useBiometrics); setLockModalVisible(true); }}
               >
-                <Text style={[styles.buttonText, { color: '#ffffff' }]}>
-                  {syncLoading ? 'Exporting…' : 'Export with Password'}
+                <Text style={[styles.buttonText, { color: theme.text }]}>
+                  {lock.enabled ? 'Change PIN' : 'Set PIN'}
                 </Text>
               </TouchableOpacity>
 
-              {hasBiometrics && (
-                <TouchableOpacity
-                  style={[styles.button, { backgroundColor: theme.card, borderColor: theme.cardBorder, borderWidth: 1 }]}
-                  onPress={handleExportWithBiometric}
-                  disabled={syncLoading}
-                >
-                  <Text style={[styles.buttonText, { color: theme.text }]}>
-                    {syncLoading ? 'Exporting…' : 'Export with Biometric'}
+              {lock.biometricsAvailable && (
+                <View style={styles.switchRow}>
+                  <Text style={{ color: theme.text, fontSize: 15, flex: 1 }}>
+                    Use {Platform.OS === 'ios' ? 'Face ID' : 'Fingerprint'}
                   </Text>
+                  <Switch
+                    value={lock.useBiometrics}
+                    onValueChange={lock.setBiometricsEnabled}
+                    trackColor={{ false: theme.cardBorder, true: theme.positive }}
+                    thumbColor="#ffffff"
+                  />
+                </View>
+              )}
+            </>
+          )}
+        </View>
+
+        <View style={cardCss(320)}>
+          <Text style={[styles.section, { color: theme.textSecondary }]}>CUSTOM HOLIDAYS</Text>
+
+          {holidays.length === 0 && (
+            <Text style={[styles.emptyText, { color: theme.textTertiary }]}>
+              No custom holidays added.
+            </Text>
+          )}
+
+          {holidays.map(holiday => (
+            <View key={holiday.id}>
+              <TouchableOpacity
+                style={[styles.holidayRow, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
+                onPress={() => startEditHoliday(holiday)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.holidayInfo}>
+                  <Text style={[{ color: theme.text, fontSize: 15 }]}>
+                    {holiday.date}
+                    {holiday.name ? `  ${holiday.name}` : ''}
+                  </Text>
+                </View>
+                <View style={styles.holidayBadges}>
+                  {holiday.recurring ? (
+                    <Text style={[{ color: theme.positive, fontSize: 12, fontWeight: '600' }]}>Annual</Text>
+                  ) : null}
+                  {holiday.affectsPay ? (
+                    <Text style={[{ color: theme.textSecondary, fontSize: 12, fontWeight: '600', marginLeft: 8 }]}>Shifts</Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity onPress={() => handleDeleteHoliday(holiday.id)} hitSlop={8}>
+                  <Ionicons name="close-circle" size={20} color={theme.negative} />
                 </TouchableOpacity>
+              </TouchableOpacity>
+
+              {editHolidayId === holiday.id && (
+                <View style={[styles.holidayEditForm, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}>
+                  <Text style={[styles.label, { color: theme.textSecondary }]}>Date</Text>
+                  {Platform.OS === 'web' ? (
+                    <WebDateInput
+                      value={holidayFormDate}
+                      onChange={d => setHolidayFormDate(d)}
+                    />
+                  ) : (
+                    <DateTimePicker
+                      value={holidayFormDate}
+                      mode="date"
+                      display="default"
+                      onChange={(_e: DateTimePickerEvent, d?: Date) => d && setHolidayFormDate(d)}
+                      themeVariant={theme.background === '#0a0a0a' ? 'dark' : 'light'}
+                    />
+                  )}
+
+                  <Text style={[styles.label, { color: theme.textSecondary, marginTop: 12 }]}>Name (optional)</Text>
+                  <TextInput
+                    style={[styles.holidayInput, { color: theme.text, borderColor: theme.cardBorder }]}
+                    value={holidayFormName}
+                    onChangeText={setHolidayFormName}
+                    placeholder="e.g. Independence Day"
+                    placeholderTextColor={theme.textTertiary}
+                  />
+
+                  <View style={styles.switchRow}>
+                    <Text style={[{ color: theme.text, fontSize: 15 }]}>Repeats annually</Text>
+                    <Switch
+                      value={holidayFormRecurring}
+                      onValueChange={setHolidayFormRecurring}
+                      trackColor={{ false: theme.cardBorder, true: theme.positive }}
+                      thumbColor="#ffffff"
+                    />
+                  </View>
+
+                  <View style={styles.switchRow}>
+                    <Text style={[{ color: theme.text, fontSize: 15 }]}>Shifts pay & bills</Text>
+                    <Switch
+                      value={holidayFormAffectsPay}
+                      onValueChange={setHolidayFormAffectsPay}
+                      trackColor={{ false: theme.cardBorder, true: theme.positive }}
+                      thumbColor="#ffffff"
+                    />
+                  </View>
+
+                  <View style={styles.holidayEditButtons}>
+                    <TouchableOpacity
+                      style={[styles.button, { backgroundColor: theme.positive, flex: 1 }]}
+                      onPress={handleSaveHoliday}
+                    >
+                      <Text style={[styles.buttonText, { color: '#ffffff' }]}>Save</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.button, { backgroundColor: theme.card, borderColor: theme.cardBorder, borderWidth: 1, flex: 1, marginLeft: 8 }]}
+                      onPress={() => setEditHolidayId(null)}
+                    >
+                      <Text style={[styles.buttonText, { color: theme.textSecondary }]}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+          ))}
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: theme.card, borderColor: theme.cardBorder, borderWidth: 1 }]}
+            onPress={() => { resetHolidayForm(); setEditHolidayId(null); setAddHolidayModalVisible(true); }}
+          >
+            <Text style={[styles.buttonText, { color: theme.text }]}>+ Add Holiday</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Modal visible={addHolidayModalVisible} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Add Holiday</Text>
+
+              <Text style={[styles.label, { color: theme.textSecondary }]}>Date</Text>
+              {Platform.OS === 'web' ? (
+                <WebDateInput
+                  value={holidayFormDate}
+                  onChange={d => setHolidayFormDate(d)}
+                />
+              ) : (
+                <DateTimePicker
+                  value={holidayFormDate}
+                  mode="date"
+                  display="default"
+                  onChange={(_e: DateTimePickerEvent, d?: Date) => d && setHolidayFormDate(d)}
+                  themeVariant={theme.background === '#0a0a0a' ? 'dark' : 'light'}
+                />
               )}
 
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: theme.card }]}
-                onPress={() => { setExportModalVisible(false); setSyncPassword(''); }}
-              >
-                <Text style={[styles.buttonText, { color: theme.textSecondary }]}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+              <Text style={[styles.label, { color: theme.textSecondary, marginTop: 12 }]}>Name (optional)</Text>
+              <TextInput
+                style={[styles.holidayInput, { color: theme.text, borderColor: theme.cardBorder }]}
+                value={holidayFormName}
+                onChangeText={setHolidayFormName}
+                placeholder="e.g. Independence Day"
+                placeholderTextColor={theme.textTertiary}
+              />
 
-        <Modal visible={importModalVisible} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Enter Password</Text>
-              <Text style={[styles.label, { color: theme.textSecondary }]}>Password used during export</Text>
-              <View style={styles.passwordRow}>
-                <TextInput
-                  style={[styles.passwordInput, { color: theme.text }]}
-                  value={syncPassword}
-                  onChangeText={setSyncPassword}
-                  placeholder="Enter password"
-                  placeholderTextColor={theme.textTertiary}
-                  secureTextEntry={!showImportPassword}
+              <View style={styles.switchRow}>
+                <Text style={[{ color: theme.text, fontSize: 15 }]}>Repeats annually</Text>
+                <Switch
+                  value={holidayFormRecurring}
+                  onValueChange={setHolidayFormRecurring}
+                  trackColor={{ false: theme.cardBorder, true: theme.positive }}
+                  thumbColor="#ffffff"
                 />
-                <TouchableOpacity
-                  style={styles.eyeButton}
-                  onPress={() => setShowImportPassword(!showImportPassword)}
-                >
-                  <Ionicons
-                    name={showImportPassword ? 'eye-outline' : 'eye-off-outline'}
-                    size={22}
-                    color={theme.textSecondary}
-                  />
-                </TouchableOpacity>
               </View>
+
+              <View style={styles.switchRow}>
+                <Text style={[{ color: theme.text, fontSize: 15 }]}>Shifts pay & bills</Text>
+                <Switch
+                  value={holidayFormAffectsPay}
+                  onValueChange={setHolidayFormAffectsPay}
+                  trackColor={{ false: theme.cardBorder, true: theme.positive }}
+                  thumbColor="#ffffff"
+                />
+              </View>
+
               <TouchableOpacity
                 style={[styles.button, { backgroundColor: theme.positive }]}
-                onPress={handleImportWithPassword}
-                disabled={syncLoading}
+                onPress={handleSaveHoliday}
               >
-                <Text style={[styles.buttonText, { color: '#ffffff' }]}>
-                  {syncLoading ? 'Importing…' : 'Import'}
-                </Text>
+                <Text style={[styles.buttonText, { color: '#ffffff' }]}>Save</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.button, { backgroundColor: theme.card }]}
-                onPress={() => { setImportModalVisible(false); setSyncPassword(''); setPendingImportData(null); }}
+                onPress={() => setAddHolidayModalVisible(false)}
               >
                 <Text style={[styles.buttonText, { color: theme.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
@@ -525,9 +629,129 @@ export default function SettingsScreen() {
           </View>
         </Modal>
 
-        {/* About */}
-        <View style={[styles.about, { borderTopColor: theme.cardBorder }]}>
-          <Text style={[styles.aboutTitle, { color: theme.text }]}>About</Text>
+        <View style={cardCss(400)}>
+          <Text style={[styles.section, { color: theme.textSecondary }]}>DATA</Text>
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: theme.positive }]}
+            onPress={() => setExportModalVisible(true)}
+          >
+            <Text style={[styles.buttonText, { color: '#ffffff' }]}>Export Backup</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: theme.card, borderColor: theme.cardBorder, borderWidth: 1 }]}
+            onPress={handleImport}
+          >
+            <Text style={[styles.buttonText, { color: theme.text }]}>Import Backup</Text>
+          </TouchableOpacity>
+
+          <Modal visible={exportModalVisible} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Export Backup</Text>
+
+                <Text style={[styles.label, { color: theme.textSecondary }]}>Password (at least 4 characters)</Text>
+                <View style={styles.passwordRow}>
+                  <TextInput
+                    style={[styles.passwordInput, { color: theme.text }]}
+                    value={syncPassword}
+                    onChangeText={setSyncPassword}
+                    placeholder="Enter password"
+                    placeholderTextColor={theme.textTertiary}
+                    secureTextEntry={!showExportPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowExportPassword(!showExportPassword)}
+                  >
+                    <Ionicons
+                      name={showExportPassword ? 'eye-outline' : 'eye-off-outline'}
+                      size={22}
+                      color={theme.textSecondary}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.button, { backgroundColor: theme.positive }]}
+                  onPress={handleExportWithPassword}
+                  disabled={syncLoading}
+                >
+                  <Text style={[styles.buttonText, { color: '#ffffff' }]}>
+                    {syncLoading ? 'Exporting…' : 'Export with Password'}
+                  </Text>
+                </TouchableOpacity>
+
+                {hasBiometrics && (
+                  <TouchableOpacity
+                    style={[styles.button, { backgroundColor: theme.card, borderColor: theme.cardBorder, borderWidth: 1 }]}
+                    onPress={handleExportWithBiometric}
+                    disabled={syncLoading}
+                  >
+                    <Text style={[styles.buttonText, { color: theme.text }]}>
+                      {syncLoading ? 'Exporting…' : 'Export with Biometric'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.button, { backgroundColor: theme.card }]}
+                  onPress={() => { setExportModalVisible(false); setSyncPassword(''); }}
+                >
+                  <Text style={[styles.buttonText, { color: theme.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+
+          <Modal visible={importModalVisible} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Enter Password</Text>
+                <Text style={[styles.label, { color: theme.textSecondary }]}>Password used during export</Text>
+                <View style={styles.passwordRow}>
+                  <TextInput
+                    style={[styles.passwordInput, { color: theme.text }]}
+                    value={syncPassword}
+                    onChangeText={setSyncPassword}
+                    placeholder="Enter password"
+                    placeholderTextColor={theme.textTertiary}
+                    secureTextEntry={!showImportPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowImportPassword(!showImportPassword)}
+                  >
+                    <Ionicons
+                      name={showImportPassword ? 'eye-outline' : 'eye-off-outline'}
+                      size={22}
+                      color={theme.textSecondary}
+                    />
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity
+                  style={[styles.button, { backgroundColor: theme.positive }]}
+                  onPress={handleImportWithPassword}
+                  disabled={syncLoading}
+                >
+                  <Text style={[styles.buttonText, { color: '#ffffff' }]}>
+                    {syncLoading ? 'Importing…' : 'Import'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, { backgroundColor: theme.card }]}
+                  onPress={() => { setImportModalVisible(false); setSyncPassword(''); setPendingImportData(null); }}
+                >
+                  <Text style={[styles.buttonText, { color: theme.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        </View>
+
+        <View style={cardCss(480)}>
+          <Text style={[styles.section, { color: theme.textSecondary }]}>ABOUT</Text>
           <Text style={[styles.aboutText, { color: theme.textSecondary }]}>
             month2month {'\u2014'} a local-only monthly budget tracker.{'\n\n'}
             All data is stored on-device. No servers, no accounts, no tracking.{'\n\n'}
@@ -536,30 +760,78 @@ export default function SettingsScreen() {
           <Text style={[styles.versionText, { color: theme.textTertiary }]}>
             v{APP_VERSION}
           </Text>
+
+          {Platform.OS === 'web' && (
+            <TouchableOpacity onPress={() => router.push('/privacy-policy')}>
+              <Text style={[styles.privacyLink, { color: theme.textSecondary }]}>
+                Privacy Policy
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: theme.card, borderColor: theme.negative, borderWidth: 1, marginTop: 40 }]}
-          onPress={() => {
-            Alert.alert(
-              'Delete All Data',
-              'This will permanently delete all your bills, income, pay, and settings. This cannot be undone.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete Everything',
-                  style: 'destructive',
-                  onPress: async () => {
-                    await resetAllData();
-                    Alert.alert('Deleted', 'All data has been removed. Restart the app to begin fresh.');
-                  },
-                },
-              ],
-            );
-          }}
-        >
-          <Text style={[styles.buttonText, { color: theme.negative }]}>Delete All Data</Text>
-        </TouchableOpacity>
+        <View style={{ ...cardCss(560), borderColor: theme.negative }}>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: theme.card, borderColor: theme.negative, borderWidth: 1, marginTop: 0 }]}
+            onPress={() => setDeleteModalVisible(true)}
+          >
+            <Text style={[styles.buttonText, { color: theme.negative }]}>Delete All Data</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Modal visible={deleteModalVisible} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Delete All Data</Text>
+              <Text style={[styles.label, { color: theme.textSecondary }]}>
+                This will permanently delete all your bills, income, pay, and settings. This cannot be undone.
+              </Text>
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: theme.negative, marginTop: 20 }]}
+                onPress={async () => {
+                  setDeleteModalVisible(false);
+                  await new Promise(r => setTimeout(r, 100));
+                  await resetAllData();
+                  if (Platform.OS === 'web') {
+                    window.location.href = '/onboarding/step-1';
+                  } else {
+                    router.replace('/onboarding/step-1');
+                  }
+                }}
+              >
+                <Text style={[styles.buttonText, { color: '#ffffff' }]}>Delete Everything</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: theme.card }]}
+                onPress={() => setDeleteModalVisible(false)}
+              >
+                <Text style={[styles.buttonText, { color: theme.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Lock setup modal */}
+        <Modal visible={lockModalVisible} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+              <LockSetup
+                onSetPin={async (pin) => {
+                  await lock.setPin(pin);
+                  if (lockUseBiometrics) {
+                    await lock.setBiometricsEnabled(true);
+                  }
+                  setLockModalVisible(false);
+                }}
+                onSkip={() => setLockModalVisible(false)}
+                biometricsAvailable={lock.biometricsAvailable}
+                useBiometrics={lockUseBiometrics}
+                onBiometricsChange={setLockUseBiometrics}
+                cancelLabel="Cancel"
+              />
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
     </SafeAreaView>
   );
@@ -610,13 +882,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 8,
   },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    paddingBottom: 8,
-    marginBottom: 24,
-  },
   passwordRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -631,13 +896,6 @@ const styles = StyleSheet.create({
   },
   eyeButton: {
     padding: 4,
-  },
-  input: {
-    flex: 1,
-    fontSize: 24,
-    borderBottomWidth: 2,
-    paddingBottom: 8,
-    marginBottom: 24,
   },
   button: {
     paddingVertical: 16,
@@ -666,29 +924,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  weekdayRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 24,
-  },
-  weekdayButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  weekdayText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  dateButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 24,
-  },
   switchRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -706,16 +941,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  about: {
-    borderTopWidth: 1,
-    paddingTop: 24,
-    marginTop: 40,
-  },
-  aboutTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
   aboutText: {
     fontSize: 14,
     lineHeight: 20,
@@ -723,6 +948,11 @@ const styles = StyleSheet.create({
   versionText: {
     fontSize: 13,
     marginTop: 16,
+  },
+  privacyLink: {
+    fontSize: 14,
+    marginTop: 16,
+    textDecorationLine: 'underline',
   },
   modalOverlay: {
     flex: 1,
@@ -736,10 +966,51 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     padding: 24,
     borderRadius: 16,
+    boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 32, color: 'rgba(0,0,0,0.4)' }],
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
     marginBottom: 20,
+  },
+  emptyText: {
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  holidayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  holidayInfo: {
+    flex: 1,
+  },
+  holidayBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  holidayEditForm: {
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 8,
+    marginTop: -4,
+  },
+  holidayInput: {
+    fontSize: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  holidayEditButtons: {
+    flexDirection: 'row',
+    marginTop: 8,
   },
 });

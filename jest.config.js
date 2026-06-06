@@ -14,5 +14,6 @@ module.exports = {
     '/node_modules/',
     '/__tests__/helpers/',
   ],
+  setupFiles: ['./__tests__/helpers/globals.js'],
   testEnvironment: 'node',
 };

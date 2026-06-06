@@ -5,6 +5,7 @@ import type { Bill } from '../db/types';
 import { deleteBill, type Label } from '../db';
 import type { ThemeColors } from './ThemeContext';
 import { formatCurrency } from '../utils/currency';
+import { hexToRgba } from '../utils/helpers';
 import type { CurrencyCode } from '../utils/currency';
 
 type Props = {
@@ -103,12 +104,12 @@ export default function BillList({ bills, onChanged, theme, currency, accentColo
             </View>
             <View style={styles.badges}>
               {bill.isRecurring && (
-                <Text style={[styles.badge, { color: theme.positive, backgroundColor: hexToRgba(theme.positive, 0.1) }]}>
+                <Text style={[styles.badge, { color: theme.positive, backgroundColor: hexToRgba(theme.positive, 0.1) }]} numberOfLines={1}>
                   {bill.frequency === 'weekly' ? 'weekly' : 'recurring'}
                 </Text>
               )}
               {formatBillDate(bill) && (
-                <Text style={[styles.dateBadge, { color: theme.textSecondary, backgroundColor: theme.cardBorder }]}>
+                <Text style={[styles.dateBadge, { color: theme.textSecondary, backgroundColor: theme.cardBorder }]} numberOfLines={1}>
                   {formatBillDate(bill)}
                 </Text>
               )}
@@ -121,14 +122,6 @@ export default function BillList({ bills, onChanged, theme, currency, accentColo
       ))}
     </View>
   );
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 const styles = StyleSheet.create({

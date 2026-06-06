@@ -12,17 +12,15 @@ function StatusBarTheme() {
 }
 
 export default function RootLayout() {
-  const [ready, setReady] = useState(false);
   const [fontsLoaded] = useFonts({
     'MartianMono NFM': require('../assets/fonts/MartianMonoNerdFontMono-Regular.ttf'),
   });
 
   useEffect(() => {
-    getDatabase();
-    setReady(true);
+    getDatabase().catch(() => {});
   }, []);
 
-  if (!ready || !fontsLoaded) {
+  if (!fontsLoaded) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' }}>
         <ActivityIndicator size="large" color="#ffffff" />
@@ -38,6 +36,7 @@ export default function RootLayout() {
           <Stack.Screen name="onboarding" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="add" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="privacy-policy" />
         </Stack>
         <StatusBarTheme />
       </View>

@@ -1,6 +1,8 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../components/ThemeContext';
+import { useAppLock } from '../../hooks/useAppLock';
+import AppLock from '../../components/AppLock';
 
 function TabIcon({ name, focused, color }: { name: string; focused: boolean; color: string }) {
   const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -12,34 +14,37 @@ function TabIcon({ name, focused, color }: { name: string; focused: boolean; col
 
 export default function TabLayout() {
   const { theme } = useTheme();
+  const lock = useAppLock();
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: theme.card,
-          borderTopColor: theme.cardBorder,
-          borderTopWidth: 1,
-        },
-        tabBarActiveTintColor: theme.text,
-        tabBarInactiveTintColor: theme.textTertiary,
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ focused, color }) => <TabIcon name="index" focused={focused} color={color as string} />,
+    <AppLock lock={lock}>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: {
+            backgroundColor: theme.card,
+            borderTopColor: theme.cardBorder,
+            borderTopWidth: 1,
+          },
+          tabBarActiveTintColor: theme.text,
+          tabBarInactiveTintColor: theme.textTertiary,
         }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ focused, color }) => <TabIcon name="settings" focused={focused} color={color as string} />,
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Home',
+            tabBarIcon: ({ focused, color }) => <TabIcon name="index" focused={focused} color={color as string} />,
+          }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: 'Settings',
+            tabBarIcon: ({ focused, color }) => <TabIcon name="settings" focused={focused} color={color as string} />,
+          }}
+        />
+      </Tabs>
+    </AppLock>
   );
 }
