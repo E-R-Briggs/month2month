@@ -86,6 +86,10 @@ export default function AnimatedBalance({ value, positiveColor = '#22c55e', nega
   const posRgba = useRef(hexToRgba(positiveColor, 0.15)).current;
   const negRgba = useRef(hexToRgba(negativeColor, 0.15)).current;
 
+  const removeDiff = (id: number) => {
+    setDiffs(prev => prev.filter(d => d.id !== id));
+  };
+
   useEffect(() => {
     if (value !== prevValueSV.value) {
       const diff = value - prevValueSV.value;
@@ -95,14 +99,16 @@ export default function AnimatedBalance({ value, positiveColor = '#22c55e', nega
 
       const id = nextId.current++;
       setDiffs(prev => [...prev, { id, amount: Math.abs(diff), inc }]);
-      setTimeout(() => {
-        setDiffs(prev => prev.filter(d => d.id !== id));
-      }, 1200);
 
       flashProgress.value = 0;
       flashProgress.value = withTiming(1, {
         duration: 1200,
         easing: Easing.out(Easing.cubic),
+      }, (finished) => {
+        'worklet';
+        if (finished) {
+          scheduleOnRN(removeDiff, id);
+        }
       });
 
       animatedValue.value = withTiming(value, {

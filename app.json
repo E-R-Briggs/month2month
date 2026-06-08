@@ -2,18 +2,15 @@
   "expo": {
     "name": "month2month",
     "slug": "month2month",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "scheme": "month2month",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
-    "splash": {
-      "backgroundColor": "#0f0f23"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.month2month.app",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "icon": {
         "light": "./assets/icon.png",
         "dark": "./assets/icon.png",
@@ -22,7 +19,7 @@
     },
     "android": {
       "package": "com.month2month.app",
-      "versionCode": 2,
+      "versionCode": 3,
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/android-icon-foreground.png",

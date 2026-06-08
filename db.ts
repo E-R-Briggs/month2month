@@ -44,7 +44,6 @@ export function resetTestDatabase() {
 export const getDatabase = async () => {
   if (_testDb) return _testDb;
   if (dbInstance) return dbInstance;
-  if (dbInitPromise) return dbInitPromise;
 
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
@@ -61,114 +60,113 @@ export const getDatabase = async () => {
           throw e;
         }
       }
-      return expoDb;
+
+      await expoDb.execAsync(`
+        CREATE TABLE IF NOT EXISTS payments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          amount REAL NOT NULL,
+          month TEXT NOT NULL,
+          payDate INTEGER NOT NULL,
+          frequency TEXT DEFAULT 'monthly',
+          weekDay INTEGER,
+          startDate TEXT,
+          createdAt INTEGER,
+          updatedAt INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS bills (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          name TEXT NOT NULL,
+          amount REAL NOT NULL,
+          isRecurring INTEGER DEFAULT false,
+          date TEXT,
+          startMonth TEXT,
+          endMonth TEXT,
+          dueDay INTEGER,
+          frequency TEXT DEFAULT 'monthly',
+          weekDay INTEGER,
+          category TEXT DEFAULT 'other',
+          createdAt INTEGER,
+          updatedAt INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS sync_deletions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          tableName TEXT NOT NULL,
+          rowId INTEGER NOT NULL,
+          deletedAt INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+          key TEXT PRIMARY KEY NOT NULL,
+          value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS labels (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          name TEXT NOT NULL UNIQUE,
+          color TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS holidays (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          date TEXT NOT NULL,
+          name TEXT DEFAULT '',
+          recurring INTEGER DEFAULT true,
+          affectsPay INTEGER DEFAULT true
+        );
+      `);
+
+      const pCols = await expoDb.getAllAsync('PRAGMA table_info(payments)') as ColumnInfo[];
+      if (!pCols.find(c => c.name === 'frequency')) {
+        await expoDb.execAsync("ALTER TABLE payments ADD COLUMN frequency TEXT DEFAULT 'monthly'");
+        await expoDb.execAsync('ALTER TABLE payments ADD COLUMN weekDay INTEGER');
+        await expoDb.execAsync('ALTER TABLE payments ADD COLUMN startDate TEXT');
+      }
+      const bCols = await expoDb.getAllAsync('PRAGMA table_info(bills)') as ColumnInfo[];
+      if (!bCols.find(c => c.name === 'frequency')) {
+        await expoDb.execAsync("ALTER TABLE bills ADD COLUMN frequency TEXT DEFAULT 'monthly'");
+        await expoDb.execAsync('ALTER TABLE bills ADD COLUMN weekDay INTEGER');
+      }
+      if (!bCols.find(c => c.name === 'overrideMonth')) {
+        await expoDb.execAsync('ALTER TABLE bills ADD COLUMN overrideMonth TEXT');
+      }
+      if (!bCols.find(c => c.name === 'type')) {
+        await expoDb.execAsync("ALTER TABLE bills ADD COLUMN type TEXT DEFAULT 'expense'");
+      }
+      if (!bCols.find(c => c.name === 'updatedAt')) {
+        await expoDb.execAsync('ALTER TABLE bills ADD COLUMN updatedAt INTEGER');
+        await expoDb.execAsync('ALTER TABLE payments ADD COLUMN updatedAt INTEGER');
+      }
+      if (!bCols.find(c => c.name === 'labelId')) {
+        await expoDb.execAsync('ALTER TABLE bills ADD COLUMN labelId INTEGER');
+      }
+      if (!bCols.find(c => c.name === 'adjustment')) {
+        await expoDb.execAsync("ALTER TABLE bills ADD COLUMN adjustment INTEGER DEFAULT false");
+        await expoDb.execAsync("ALTER TABLE payments ADD COLUMN adjustment INTEGER DEFAULT false");
+      }
+
+      await expoDb.execAsync('UPDATE bills SET updatedAt = COALESCE(updatedAt, createdAt)');
+      await expoDb.execAsync('UPDATE payments SET updatedAt = COALESCE(updatedAt, createdAt)');
+
+      await expoDb.execAsync("DELETE FROM sync_deletions WHERE deletedAt < (strftime('%s', 'now') - 7776000) * 1000");
+
+      const labelCount = (await expoDb.getAllAsync('SELECT COUNT(*) as c FROM labels') as { c: number }[])[0].c;
+      if (labelCount === 0) {
+        await expoDb.execAsync(
+          "INSERT INTO labels (name, color) VALUES " +
+          "('Bills', '#ef4444'), ('Subscription', '#f59e0b'), ('Food', '#22c55e'), " +
+          "('Transport', '#3b82f6'), ('Shopping', '#a855f7'), ('Other', '#6b7280')"
+        );
+        await expoDb.execAsync(
+          "UPDATE bills SET labelId = (SELECT id FROM labels WHERE LOWER(labels.name) = LOWER(bills.category)) WHERE labelId IS NULL AND category IS NOT NULL"
+        );
+      }
+
+      dbInstance = expoDb;
+      return dbInstance;
     })().catch(e => {
       dbInitPromise = null;
       throw e;
     });
   }
 
-  const expoDb = await dbInitPromise;
-
-  await expoDb.execAsync(`
-    CREATE TABLE IF NOT EXISTS payments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-      amount REAL NOT NULL,
-      month TEXT NOT NULL,
-      payDate INTEGER NOT NULL,
-      frequency TEXT DEFAULT 'monthly',
-      weekDay INTEGER,
-      startDate TEXT,
-      createdAt INTEGER,
-      updatedAt INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS bills (
-      id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-      name TEXT NOT NULL,
-      amount REAL NOT NULL,
-      isRecurring INTEGER DEFAULT false,
-      date TEXT,
-      startMonth TEXT,
-      endMonth TEXT,
-      dueDay INTEGER,
-      frequency TEXT DEFAULT 'monthly',
-      weekDay INTEGER,
-      category TEXT DEFAULT 'other',
-      createdAt INTEGER,
-      updatedAt INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS sync_deletions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-      tableName TEXT NOT NULL,
-      rowId INTEGER NOT NULL,
-      deletedAt INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY NOT NULL,
-      value TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS labels (
-      id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-      name TEXT NOT NULL UNIQUE,
-      color TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS holidays (
-      id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-      date TEXT NOT NULL,
-      name TEXT DEFAULT '',
-      recurring INTEGER DEFAULT true,
-      affectsPay INTEGER DEFAULT true
-    );
-  `);
-
-  const pCols = await expoDb.getAllAsync('PRAGMA table_info(payments)') as ColumnInfo[];
-  if (!pCols.find(c => c.name === 'frequency')) {
-    await expoDb.execAsync("ALTER TABLE payments ADD COLUMN frequency TEXT DEFAULT 'monthly'");
-    await expoDb.execAsync('ALTER TABLE payments ADD COLUMN weekDay INTEGER');
-    await expoDb.execAsync('ALTER TABLE payments ADD COLUMN startDate TEXT');
-  }
-  const bCols = await expoDb.getAllAsync('PRAGMA table_info(bills)') as ColumnInfo[];
-  if (!bCols.find(c => c.name === 'frequency')) {
-    await expoDb.execAsync("ALTER TABLE bills ADD COLUMN frequency TEXT DEFAULT 'monthly'");
-    await expoDb.execAsync('ALTER TABLE bills ADD COLUMN weekDay INTEGER');
-  }
-  if (!bCols.find(c => c.name === 'overrideMonth')) {
-    await expoDb.execAsync('ALTER TABLE bills ADD COLUMN overrideMonth TEXT');
-  }
-  if (!bCols.find(c => c.name === 'type')) {
-    await expoDb.execAsync("ALTER TABLE bills ADD COLUMN type TEXT DEFAULT 'expense'");
-  }
-  if (!bCols.find(c => c.name === 'updatedAt')) {
-    await expoDb.execAsync('ALTER TABLE bills ADD COLUMN updatedAt INTEGER');
-    await expoDb.execAsync('ALTER TABLE payments ADD COLUMN updatedAt INTEGER');
-  }
-  if (!bCols.find(c => c.name === 'labelId')) {
-    await expoDb.execAsync('ALTER TABLE bills ADD COLUMN labelId INTEGER');
-  }
-  if (!bCols.find(c => c.name === 'adjustment')) {
-    await expoDb.execAsync("ALTER TABLE bills ADD COLUMN adjustment INTEGER DEFAULT false");
-    await expoDb.execAsync("ALTER TABLE payments ADD COLUMN adjustment INTEGER DEFAULT false");
-  }
-
-  await expoDb.execAsync('UPDATE bills SET updatedAt = COALESCE(updatedAt, createdAt)');
-  await expoDb.execAsync('UPDATE payments SET updatedAt = COALESCE(updatedAt, createdAt)');
-
-  await expoDb.execAsync("DELETE FROM sync_deletions WHERE deletedAt < (strftime('%s', 'now') - 7776000) * 1000");
-
-  const labelCount = (await expoDb.getAllAsync('SELECT COUNT(*) as c FROM labels') as { c: number }[])[0].c;
-  if (labelCount === 0) {
-    await expoDb.execAsync(
-      "INSERT INTO labels (name, color) VALUES " +
-      "('Bills', '#ef4444'), ('Subscription', '#f59e0b'), ('Food', '#22c55e'), " +
-      "('Transport', '#3b82f6'), ('Shopping', '#a855f7'), ('Other', '#6b7280')"
-    );
-    await expoDb.execAsync(
-      "UPDATE bills SET labelId = (SELECT id FROM labels WHERE LOWER(labels.name) = LOWER(bills.category)) WHERE labelId IS NULL AND category IS NOT NULL"
-    );
-  }
-
-  dbInstance = expoDb;
-  return dbInstance;
+  return dbInitPromise;
 };
 
 export async function getPayForMonth(month: string): Promise<{ amount: number; payDate: number; frequency: string; weekDay: number | null; startDate: string | null; adjustment: boolean }> {

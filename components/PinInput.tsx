@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Platform } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useTheme } from './ThemeContext';
 
@@ -21,10 +21,11 @@ export default function PinInput({ length, onComplete, error }: Props) {
   }, [pin]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      inputRef.current?.focus();
-    }, 100);
-    return () => clearTimeout(timer);
+    let mounted = true;
+    setImmediate(() => {
+      if (mounted) inputRef.current?.focus();
+    });
+    return () => { mounted = false; };
   }, []);
 
   const glowKeyframes = useMemo(() => ({
@@ -75,22 +76,25 @@ export default function PinInput({ length, onComplete, error }: Props) {
 
   return (
     <View style={styles.container}>
-      <Pressable onPress={() => inputRef.current?.focus()} style={styles.dotsRow}>
-        {dots}
-      </Pressable>
-      <TextInput
-        ref={inputRef}
-        style={styles.hiddenInput}
-        value={pin}
-        onChangeText={t => {
-          const cleaned = t.replace(/[^0-9]/g, '').slice(0, length);
-          setPin(cleaned);
-        }}
-        keyboardType={Platform.OS === 'web' ? undefined : 'number-pad'}
-        maxLength={length}
-        autoFocus
-        secureTextEntry
-      />
+      <View style={styles.dotsWrapper}>
+        <View style={styles.dotsRow}>
+          {dots}
+        </View>
+        <TextInput
+          ref={inputRef}
+          style={styles.hiddenInput}
+          value={pin}
+          onChangeText={t => {
+            const cleaned = t.replace(/[^0-9]/g, '').slice(0, length);
+            setPin(cleaned);
+          }}
+          keyboardType={Platform.OS === 'web' ? undefined : 'number-pad'}
+          maxLength={length}
+          autoFocus
+          secureTextEntry
+          caretHidden={Platform.OS !== 'web'}
+        />
+      </View>
       {error && (
         <Text style={[styles.error, { color: theme.negative }]}>{error}</Text>
       )}
@@ -102,6 +106,10 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     gap: 16,
+  },
+  dotsWrapper: {
+    position: 'relative',
+    alignItems: 'center',
   },
   dotsRow: {
     flexDirection: 'row',
@@ -117,9 +125,13 @@ const styles = StyleSheet.create({
   },
   hiddenInput: {
     position: 'absolute',
-    width: 1,
-    height: 1,
-    opacity: 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    color: 'transparent',
+    backgroundColor: 'transparent',
+    cursor: 'pointer',
   },
   error: {
     fontSize: 14,
