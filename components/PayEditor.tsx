@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Platform, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '@expo/ui/community/datetime-picker';
+import SegmentedControl from '@expo/ui/community/segmented-control';
 import { useTheme } from './ThemeContext';
 import WebDateInput from './WebDateInput';
 import type { CurrencyCode } from '../utils/currency';
 import { getCurrencySymbol } from '../utils/currency';
-import { capitalize } from '../utils/helpers';
 
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
@@ -31,25 +31,15 @@ export default function PayEditor(props: Props) {
   return (
     <>
       <Text style={[styles.label, { color: theme.textSecondary }]}>Frequency</Text>
-      <View style={styles.modeRow}>
-        {(['monthly', 'weekly'] as const).map(freq => (
-          <TouchableOpacity
-            key={freq}
-            style={[
-              styles.modeButton,
-              {
-                backgroundColor: frequency === freq ? theme.positive : theme.card,
-                borderColor: theme.cardBorder,
-              },
-            ]}
-            onPress={() => onFrequencyChange(freq)}
-          >
-            <Text style={[styles.modeText, { color: frequency === freq ? '#ffffff' : theme.textSecondary }]}>
-              {capitalize(freq)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <SegmentedControl
+        values={['Monthly', 'Weekly']}
+        selectedIndex={frequency === 'monthly' ? 0 : 1}
+        onChange={(event) => {
+          onFrequencyChange(event.nativeEvent.selectedSegmentIndex === 0 ? 'monthly' : 'weekly');
+        }}
+        appearance="dark"
+        style={{ marginBottom: 20 }}
+      />
 
       <Text style={[styles.label, { color: theme.textSecondary }]}>
         {frequency === 'monthly' ? 'Monthly Pay' : 'Weekly Pay Amount'}
@@ -124,10 +114,10 @@ export default function PayEditor(props: Props) {
                 <DateTimePicker
                   value={startDate}
                   mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onValueChange={(_: any, selected?: Date) => {
-                    setShowStartPicker(Platform.OS === 'ios');
-                    if (selected) onStartDateChange(selected);
+                  presentation="dialog"
+                  onChange={(event, selectedDate) => {
+                    setShowStartPicker(false);
+                    if (selectedDate) onStartDateChange(selectedDate);
                   }}
                 />
               )}
@@ -167,22 +157,6 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: Platform.select({ web: 16, default: 24 }),
-  },
-  modeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 20,
-  },
-  modeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  modeText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
   dayGrid: {
     flexDirection: 'row',

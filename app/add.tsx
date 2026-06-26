@@ -1,4 +1,5 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '@expo/ui/community/datetime-picker';
+import SegmentedControl from '@expo/ui/community/segmented-control';
 import WebDateInput from '../components/WebDateInput';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
@@ -30,7 +31,7 @@ import {
 import type { Label } from '../db';
 import { getCurrencySymbol } from '../utils/currency';
 import { LABEL_COLORS } from '../utils/colors';
-import { capitalize, formatDateLocal } from '../utils/helpers';
+import { formatDateLocal } from '../utils/helpers';
 
 type EntryType = 'expense' | 'income';
 
@@ -105,10 +106,7 @@ export default function AddScreen() {
 
   const availableMonths = getAdjacentMonths(getCurrentMonth(), 1);
 
-  function onDateChange(_: any, selected?: Date) {
-    setShowPicker(Platform.OS === 'ios');
-    if (selected) setDate(selected);
-  }
+
 
   async function handleSave() {
     const sanitized = amount.replace(/[^0-9.]/g, '');
@@ -200,32 +198,17 @@ export default function AddScreen() {
         <View style={{ width: 60 }} />
       </View>
 
+      <SegmentedControl
+        values={['Expense', 'Income']}
+        selectedIndex={entryType === 'expense' ? 0 : 1}
+        onChange={(event) => {
+          setEntryType(event.nativeEvent.selectedSegmentIndex === 0 ? 'expense' : 'income');
+        }}
+        appearance="dark"
+        tintColor={accentColor}
+        style={{ marginBottom: 24 }}
+      />
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.typeToggle}>
-          <TouchableOpacity
-            style={[
-              styles.typeOption,
-              { backgroundColor: entryType === 'expense' ? theme.negative : theme.cardBorder },
-            ]}
-            onPress={() => setEntryType('expense')}
-          >
-            <Text style={[styles.typeText, { color: entryType === 'expense' ? '#fff' : theme.textSecondary }]}>
-              Expense
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.typeOption,
-              { backgroundColor: entryType === 'income' ? theme.positive : theme.cardBorder },
-            ]}
-            onPress={() => setEntryType('income')}
-          >
-            <Text style={[styles.typeText, { color: entryType === 'income' ? '#fff' : theme.textSecondary }]}>
-              Income
-            </Text>
-          </TouchableOpacity>
-        </View>
-
         <Text style={[styles.label, { color: theme.textSecondary }]}>Name</Text>
         <TextInput
           style={[styles.input, { color: theme.text, borderBottomColor: theme.cardBorder }]}
@@ -271,14 +254,17 @@ export default function AddScreen() {
                   </Text>
                 </TouchableOpacity>
 
-                {showPicker && (
-                  <DateTimePicker
-                    value={date}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onValueChange={onDateChange}
-                  />
-                )}
+        {showPicker && (
+          <DateTimePicker
+            value={date}
+            mode="date"
+            presentation="dialog"
+            onChange={(event, selectedDate) => {
+              setShowPicker(false);
+              if (selectedDate) setDate(selectedDate);
+            }}
+          />
+        )}
               </>
             )}
           </>
@@ -311,25 +297,16 @@ export default function AddScreen() {
         {isRecurring && (
           <>
             <Text style={[styles.label, { color: theme.textSecondary }]}>Frequency</Text>
-            <View style={styles.modeRow}>
-              {(['monthly', 'weekly'] as const).map(f => (
-                <TouchableOpacity
-                  key={f}
-                  style={[
-                    styles.modeButton,
-                    {
-                      backgroundColor: frequency === f ? accentColor : theme.card,
-                      borderColor: theme.cardBorder,
-                    },
-                  ]}
-                  onPress={() => setFrequency(f)}
-                >
-                  <Text style={[styles.modeText, { color: frequency === f ? '#ffffff' : theme.textSecondary }]}>
-                    {capitalize(f)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <SegmentedControl
+              values={['Monthly', 'Weekly']}
+              selectedIndex={frequency === 'monthly' ? 0 : 1}
+              onChange={(event) => {
+                setFrequency(event.nativeEvent.selectedSegmentIndex === 0 ? 'monthly' : 'weekly');
+              }}
+              appearance="dark"
+              tintColor={accentColor}
+              style={{ marginBottom: 20 }}
+            />
 
             {frequency === 'weekly' && (
               <>
@@ -605,21 +582,6 @@ const styles = StyleSheet.create({
   content: {
     padding: 24,
   },
-  typeToggle: {
-    flexDirection: 'row',
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginBottom: 24,
-  },
-  typeOption: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  typeText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
   label: {
     fontSize: 14,
     marginBottom: 8,
@@ -663,22 +625,6 @@ const styles = StyleSheet.create({
   },
   webDateContainer: {
     marginBottom: 24,
-  },
-  modeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 20,
-  },
-  modeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  modeText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
   weekdayRow: {
     flexDirection: 'row',

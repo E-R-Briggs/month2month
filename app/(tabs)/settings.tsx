@@ -16,7 +16,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@expo/ui/community/datetime-picker';
 import ColorPickerRow from '../../components/ColorPickerRow';
 import PayEditor from '../../components/PayEditor';
 import LockSetup from '../../components/LockSetup';
@@ -501,9 +501,8 @@ export default function SettingsScreen() {
                     <DateTimePicker
                       value={holidayFormDate}
                       mode="date"
-                      display="default"
-                      onChange={(_e: DateTimePickerEvent, d?: Date) => d && setHolidayFormDate(d)}
-                      themeVariant={theme.background === '#0a0a0a' ? 'dark' : 'light'}
+                      presentation="dialog"
+                      onChange={(_e: any, d?: Date) => d && setHolidayFormDate(d)}
                     />
                   )}
 
@@ -578,9 +577,8 @@ export default function SettingsScreen() {
                 <DateTimePicker
                   value={holidayFormDate}
                   mode="date"
-                  display="default"
-                  onChange={(_e: DateTimePickerEvent, d?: Date) => d && setHolidayFormDate(d)}
-                  themeVariant={theme.background === '#0a0a0a' ? 'dark' : 'light'}
+                  presentation="dialog"
+                  onChange={(_e: any, d?: Date) => d && setHolidayFormDate(d)}
                 />
               )}
 
